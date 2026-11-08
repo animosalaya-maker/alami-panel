@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>لوحة تحكم عالمي</title>
+<link rel="icon" href="alami-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0b0c; --panel:#141416; --panel2:#1b1b1f; --line:#2a2a30;
+    --gold:#d4af37; --gold2:#f1d27a; --text:#f2f2f2; --muted:#9a9aa3;
+    --ok:#2fbf71; --bad:#e5484d; --warn:#f5a524; --info:#4ea1ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;font-size:15px}
+  a{color:var(--gold2)}
+  button{font-family:inherit;font-size:14px;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:8px 14px}
+  button:hover{border-color:var(--gold)}
+  button:disabled{opacity:.5;cursor:wait}
+  .btn-gold{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#111;border:none;font-weight:600}
+  .btn-ok{background:rgba(47,191,113,.15);border-color:rgba(47,191,113,.5);color:#7ee2a8}
+  .btn-bad{background:rgba(229,72,77,.12);border-color:rgba(229,72,77,.5);color:#ff9a9d}
+  .btn-sm{padding:5px 10px;font-size:13px}
+  input,select,textarea{font-family:inherit;font-size:14px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+
+  /* login */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:40px 32px;max-width:380px;width:100%;text-align:center}
+  .login-card img{width:84px;height:84px;border-radius:20px;margin-bottom:12px}
+  .login-card h1{margin:0 0 6px;font-size:22px;color:var(--gold2)}
+  .login-card p{color:var(--muted);margin:0 0 24px;line-height:1.7}
+  .err{color:#ff9a9d;margin-top:14px;line-height:1.7}
+
+  /* layout */
+  #app{display:none;min-height:100vh}
+  .side{position:fixed;top:0;bottom:0;right:0;width:236px;background:var(--panel);border-left:1px solid var(--line);padding:18px 12px;overflow-y:auto}
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  .brand img{width:38px;height:38px;border-radius:10px}
+  .brand b{color:var(--gold2);font-size:17px}
+  .brand small{display:block;color:var(--muted);font-size:12px}
+  .nav button{display:flex;width:100%;align-items:center;gap:10px;border:none;background:transparent;padding:10px 12px;margin-bottom:2px;text-align:right;color:var(--text)}
+  .nav button:hover{background:var(--panel2)}
+  .nav button.active{background:rgba(212,175,55,.13);color:var(--gold2)}
+  .nav .badge{margin-inline-start:auto;background:var(--gold);color:#111;border-radius:99px;font-size:12px;padding:1px 8px;font-weight:700}
+  .nav .badge:empty{display:none}
+  .me{margin-top:18px;padding:12px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;word-break:break-all}
+  main{margin-right:236px;padding:24px 28px 60px}
+  .top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+  .top h2{margin:0;font-size:22px}
+  .top .grow{flex:1}
+  .menu-btn{display:none}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 18px;cursor:pointer}
+  .stat:hover{border-color:var(--gold)}
+  .stat .n{font-size:28px;font-weight:700;color:var(--gold2);margin-top:6px}
+  .stat .l{color:var(--muted);font-size:13px}
+  .stat.alert .n{color:var(--warn)}
+
+  .list{display:flex;flex-direction:column;gap:12px}
+  .item{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+  .item .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .item .title{font-weight:600;font-size:15px}
+  .item .meta{color:var(--muted);font-size:13px;margin-top:6px;line-height:1.8}
+  .item .meta b{color:var(--text);font-weight:500}
+  .item .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .pill{font-size:12px;padding:2px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+  .pill.pending,.pill.payment_under_review,.pill.release_requested,.pill.open,.pill.new{color:var(--warn);border-color:rgba(245,165,36,.5)}
+  .pill.approved,.pill.active,.pill.paid,.pill.released,.pill.deposit_held,.pill.resolved,.pill.ready{color:#7ee2a8;border-color:rgba(47,191,113,.5)}
+  .pill.rejected,.pill.suspended,.pill.deleted,.pill.hidden,.pill.payment_rejected,.pill.disputed,.pill.cancelled,.pill.canceled{color:#ff9a9d;border-color:rgba(229,72,77,.5)}
+  .thumb{width:64px;height:64px;border-radius:12px;object-fit:cover;background:var(--panel2);border:1px solid var(--line)}
+  details{margin-top:8px}
+  details summary{color:var(--muted);font-size:13px;cursor:pointer}
+  pre{white-space:pre-wrap;word-break:break-all;background:#0f0f11;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;color:#c9c9cf;max-height:320px;overflow:auto;direction:ltr;text-align:left}
+  .empty{color:var(--muted);text-align:center;padding:40px 10px;background:var(--panel);border:1px dashed var(--line);border-radius:16px}
+  .loading{color:var(--muted);padding:30px;text-align:center}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .filters button.on{border-color:var(--gold);color:var(--gold2)}
+  .muted{color:var(--muted)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  /* modal + toast */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;max-width:560px;width:100%;max-height:90vh;overflow:auto}
+  .modal h3{margin:0 0 12px;color:var(--gold2)}
+  .modal img{max-width:100%;border-radius:12px;display:block;margin:0 auto}
+  .modal .actions{display:flex;gap:8px;justify-content:flex-start;margin-top:16px;flex-wrap:wrap}
+  .modal textarea,.modal input{width:100%;margin-top:6px}
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--gold);color:var(--text);padding:10px 18px;border-radius:12px;display:none;z-index:60;max-width:90vw}
+  #toast.bad{border-color:var(--bad)}
+
+  @media (max-width:860px){
+    .side{transform:translateX(100%);transition:.2s;z-index:40}
+    .side.open{transform:none}
+    main{margin-right:0;padding:16px}
+    .menu-btn{display:inline-block}
+  }
+</style>
+</head>
+<body>
+
+<section id="login">
+  <div class="login-card">
+    <img src="alami-icon.png" alt="">
+    <h1>لوحة تحكم عالمي</h1>
+    <p>للمدراء فقط. سجّل دخولك بحساب Google المسجّل كمدير.</p>
+    <button class="btn-gold" id="googleBtn" style="width:100%;padding:12px">الدخول بحساب Google</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</section>
+
+<section id="app">
+  <aside class="side" id="side">
+    <div class="brand"><img src="alami-icon.png" alt=""><div><b>عالمي</b><small>لوحة التحكم</small></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="me"><div id="meEmail"></div><button class="btn-sm" id="logoutBtn" style="margin-top:10px">تسجيل الخروج</button></div>
+  </aside>
+  <main>
+    <div class="top">
+      <button class="menu-btn" id="menuBtn">☰</button>
+      <h2 id="pageTitle"></h2>
+      <div class="grow"></div>
+      <button class="btn-sm" id="refreshBtn">↻ تحديث</button>
+    </div>
+    <div id="view"></div>
+  </main>
+</section>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, setDoc, serverTimestamp, getCountFromServer, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyDYrtyHAD2IcQLur05yUahn2mWdAi7BJvg",
+  authDomain: "prob-map.firebaseapp.com",
+  projectId: "prob-map",
+  storageBucket: "prob-map.firebasestorage.app",
+  messagingSenderId: "413532202861",
+  appId: "1:413532202861:web:b9df14a1274cd401e91c64",
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const fns = getFunctions(app, "us-central1");
+const call = (name, data) => httpsCallable(fns, name)(data).then(r => r.data);
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const toDate = v => v?.toDate ? v.toDate() : (typeof v === "number" ? new Date(v) : (v ? new Date(v) : null));
+const fmtDate = v => { const d = toDate(v); return d && !isNaN(d) ? d.toLocaleString("ar", {dateStyle:"medium", timeStyle:"short"}) : "—"; };
+const ts = v => { const d = toDate(v); return d && !isNaN(d) ? d.getTime() : 0; };
+const money = n => (Number(n) || 0).toLocaleString("en", {maximumFractionDigits: 2});
+const first = (o, ...keys) => { for (const k of keys) { if (o?.[k] !== undefined && o[k] !== null && o[k] !== "") return o[k]; } return ""; };
+const STATUS_AR = {
+  pending:"قيد المراجعة", approved:"مقبول", rejected:"مرفوض", paid:"مدفوع", cancelled:"ملغي", canceled:"ملغي",
+  active:"فعّال", suspended:"موقوف", deleted:"محذوف", hidden:"مخفي", ended:"منتهي", ready:"جاهز",
+  awaiting_payment:"بانتظار الدفع", payment_under_review:"الدفع قيد المراجعة", payment_rejected:"الدفع مرفوض",
+  deposit_held:"العربون محجوز", release_requested:"طلب تحرير", release_approved:"تحرير مقبول", released:"محرَّر",
+  disputed:"نزاع", refunded:"مسترجَع", open:"مفتوح", resolved:"تمت المعالجة", new:"جديد", request_changes:"مطلوب تعديل",
+};
+const pill = s => s ? `<span class="pill ${esc(s)}">${esc(STATUS_AR[s] || s)}</span>` : "";
+function toast(msg, bad=false){ const t=$("#toast"); t.textContent=msg; t.className=bad?"bad":""; t.style.display="block"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none", 4200); }
+function errMsg(e){
+  const m = e?.message || String(e);
+  if (/permission|PERMISSION_DENIED|insufficient/i.test(m)) return "ما عندك صلاحية لهالعملية.";
+  return m.replace(/^FirebaseError:\s*/,"");
+}
+function openModal(html){ $("#modal").innerHTML = html; $("#modalBg").style.display = "flex"; }
+function closeModal(){ $("#modalBg").style.display = "none"; $("#modal").innerHTML = ""; }
+$("#modalBg").addEventListener("click", e => { if (e.target.id === "modalBg") closeModal(); });
+
+function ask({title, text="", input=null, okText="تأكيد", danger=false}){
+  return new Promise(res => {
+    openModal(`<h3>${esc(title)}</h3><div class="muted" style="line-height:1.8">${text}</div>
+      ${input ? `<textarea id="askIn" rows="3" placeholder="${esc(input)}"></textarea>` : ""}
+      <div class="actions"><button class="${danger?"btn-bad":"btn-gold"}" id="askOk">${esc(okText)}</button><button id="askNo">إلغاء</button></div>`);
+    $("#askOk").onclick = () => { const v = input ? $("#askIn").value.trim() : true; closeModal(); res(v); };
+    $("#askNo").onclick = () => { closeModal(); res(null); };
+  });
+}
+async function act(btn, fn, okMsg){
+  btn.disabled = true;
+  try { await fn(); toast(okMsg || "تم ✅"); await render(); }
+  catch(e){ console.error(e); toast(errMsg(e), true); btn.disabled = false; }
+}
+function rawDetails(d){ return `<details><summary>كل التفاصيل</summary><pre>${esc(JSON.stringify(d, (k,v)=> v && v.seconds!==undefined && v.nanoseconds!==undefined ? toDate(v).toISOString() : v, 2))}</pre></details>`; }
+
+const userCache = new Map();
+async function userLabel(uid){
+  if (!uid) return "—";
+  if (!userCache.has(uid)) {
+    userCache.set(uid, getDoc(doc(db, "users", uid)).then(s => s.exists() ? s.data() : null).catch(()=>null));
+  }
+  const u = await userCache.get(uid);
+  const name = first(u, "displayName", "fullName", "name", "username") || "بدون اسم";
+  const contact = first(u, "email", "phoneNumber", "phone");
+  return `<b>${esc(name)}</b>${contact ? ` · ${esc(contact)}` : ""} <span class="muted" style="font-size:12px">(${esc(uid.slice(0,8))}…)</span>`;
+}
+async function fetchList(col, constraints=[], max=150){
+  const snap = await getDocs(query(collection(db, col), ...constraints, limit(max)));
+  return snap.docs.map(d => ({id: d.id, ...d.data()}));
+}
+async function countOf(col, ...c){ try { return (await getCountFromServer(query(collection(db, col), ...c))).data().count; } catch { return null; } }
+const byNewest = (...keys) => (a,b) => ts(first(b, ...keys)) - ts(first(a, ...keys));
+
+/* ---------- pages ---------- */
+const PAGES = {
+  home:        {title:"الرئيسية", icon:"📊"},
+  topups:      {title:"شحن الرصيد", icon:"💰", badge:()=>countOf("wallet_top_up_requests", where("status","==","pending"))},
+  deposits:    {title:"العربون", icon:"🤝", badge:()=>countOf("deposit_transactions", where("status","in",["payment_under_review","release_requested","disputed"]))},
+  withdrawals: {title:"سحب أرباح البث", icon:"💸", badge:()=>countOf("live_withdrawals", where("status","in",["pending","approved"]))},
+  verify:      {title:"التوثيق", icon:"🪪", badge:()=>countOf("verification_requests", where("status","==","pending"))},
+  promos:      {title:"الترويج", icon:"📣", badge:()=>countOf("reel_promotions", where("status","==","pending"))},
+  businesses:  {title:"المحلات والخدمات", icon:"🏪", badge:()=>countOf("businesses", where("status","==","pending"))},
+  reports:     {title:"البلاغات", icon:"🚩"},
+  listings:    {title:"الإعلانات", icon:"🏠"},
+  reels:       {title:"الفيديوهات", icon:"🎬"},
+  users:       {title:"المستخدمين", icon:"👤"},
+  admins:      {title:"المدراء", icon:"🔐"},
+};
+let current = "home";
+let pageState = {};
+
+function buildNav(){
+  $("#nav").innerHTML = Object.entries(PAGES).map(([k,p]) =>
+    `<button data-p="${k}" class="${k===current?"active":""}">${p.icon} ${p.title}<span class="badge" id="b-${k}"></span></button>`).join("");
+  $("#nav").querySelectorAll("button").forEach(b => b.onclick = () => { go(b.dataset.p); $("#side").classList.remove("open"); });
+  refreshBadges();
+}
+async function refreshBadges(){
+  for (const [k,p] of Object.entries(PAGES)) if (p.badge) p.badge().then(n => { const el = $("#b-"+k); if (el) el.textContent = n ? n : ""; });
+}
+function go(p){ current = p; pageState = {}; location.hash = p; buildNav(); render(); }
+async function render(){
+  $("#pageTitle").textContent = PAGES[current].icon + " " + PAGES[current].title;
+  $("#view").innerHTML = `<div class="loading">عم يحمّل…</div>`;
+  try { await RENDER[current](); }
+  catch(e){ console.error(e); $("#view").innerHTML = `<div class="empty">صار خطأ: ${esc(errMsg(e))}</div>`; }
+  refreshBadges();
+}
+$("#refreshBtn").onclick = () => render();
+$("#menuBtn").onclick = () => $("#side").classList.toggle("open");
+
+function filterBar(options, key="filter"){
+  const cur = pageState[key] ?? options[0][0];
+  return `<div class="filters">${options.map(([v,l]) => `<button class="btn-sm ${v===cur?"on":""}" data-f="${esc(v)}" data-k="${key}">${esc(l)}</button>`).join("")}</div>`;
+}
+function bindFilters(){
+  $("#view").querySelectorAll("[data-f]").forEach(b => b.onclick = () => { pageState[b.dataset.k] = b.dataset.f; render(); });
+}
+function emptyBox(t="ما في شي هون حالياً 👌"){ return `<div class="empty">${t}</div>`; }
+
+const RENDER = {};
+
+/* ---- home ---- */
+RENDER.home = async () => {
+  const stats = [
+    ["users", "المستخدمين", countOf("users")],
+    ["listings", "الإعلانات", countOf("listings")],
+    ["reels", "الفيديوهات", countOf("reels")],
+    ["topups", "شحن رصيد معلّق", countOf("wallet_top_up_requests", where("status","==","pending")), true],
+    ["deposits", "عربون يحتاج مراجعة", countOf("deposit_transactions", where("status","in",["payment_under_review","release_requested","disputed"])), true],
+    ["withdrawals", "سحوبات معلّقة", countOf("live_withdrawals", where("status","in",["pending","approved"])), true],
+    ["verify", "توثيق معلّق", countOf("verification_requests", where("status","==","pending")), true],
+    ["promos", "ترويج معلّق", countOf("reel_promotions", where("status","==","pending")), true],
+    ["businesses", "محلات معلّقة", countOf("businesses", where("status","==","pending")), true],
+    ["reports", "البلاغات", countOf("user_reports")],
+  ];
+  const vals = await Promise.all(stats.map(s => s[2]));
+  $("#view").innerHTML = `<div class="cards">${stats.map((s,i) =>
+    `<div class="stat ${s[3] && vals[i] ? "alert" : ""}" data-go="${s[0]}"><div class="l">${s[1]}</div><div class="n">${vals[i] ?? "—"}</div></div>`).join("")}</div>
+    <p class="muted" style="margin-top:22px;line-height:1.9">الأرقام الصفرا يعني في طلبات ناطرة موافقتك. اضغط على أي مربع لتفتح القسم.</p>`;
+  $("#view").querySelectorAll("[data-go]").forEach(el => el.onclick = () => go(el.dataset.go));
+};
+
+/* ---- wallet top-ups ---- */
+RENDER.topups = async () => {
+  const f = pageState.filter ?? "pending";
+  const rows = (await fetchList("wallet_top_up_requests", f === "all" ? [] : [where("status","==",f)])).sort(byNewest("submittedAt","createdAt"));
+  let html = filterBar([["pending","المعلّقة"],["approved","المقبولة"],["rejected","المرفوضة"],["all","الكل"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `
+    <div class="item"><div class="head"><span class="title">${money(r.amount)} $</span>${pill(r.status)}<span class="muted">${esc(r.paymentMethod || "شام كاش")}</span></div>
+      <div class="meta">المستخدم: ${await userLabel(r.userId)}<br>التاريخ: ${fmtDate(first(r,"submittedAt","createdAt"))}${r.rejectionReason ? `<br>سبب الرفض: ${esc(r.rejectionReason)}` : ""}</div>
+      <div class="actions">
+        <button class="btn-sm" data-receipt="${esc(r.id)}">🧾 عرض الإيصال</button>
+        ${r.status === "pending" ? `<button class="btn-sm btn-ok" data-approve="${esc(r.id)}" data-amount="${esc(r.amount)}">✅ موافقة وإضافة الرصيد</button>
+        <button class="btn-sm btn-bad" data-reject="${esc(r.id)}">❌ رفض</button>` : ""}
+      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-receipt]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { const r = await call("getWalletTopUpReceipt", {requestId: b.dataset.receipt});
+      openModal(`<h3>الإيصال</h3><img src="data:${esc(r.contentType)};base64,${r.receiptBase64}"><div class="actions"><button onclick="document.getElementById('modalBg').click()">إغلاق</button></div>`);
+      $("#modal .actions button").onclick = closeModal;
+    } catch(e){ toast(errMsg(e), true); } b.disabled = false;
+  });
+  $("#view").querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => {
+    if (!await ask({title:"تأكيد إضافة الرصيد", text:`رح ينضاف <b>${money(b.dataset.amount)} $</b> لرصيد المستخدم. تأكدت من الإيصال؟`, okText:"إيه، أضف الرصيد"})) return;
+    act(b, () => call("reviewWalletTopUpRequest", {requestId: b.dataset.approve, action: "approve"}), "تمت إضافة الرصيد ✅");
+  });
+  $("#view").querySelectorAll("[data-reject]").forEach(b => b.onclick = async () => {
+    const reason = await ask({title:"رفض طلب الشحن", input:"سبب الرفض (بيوصل للمستخدم)", okText:"رفض", danger:true});
+    if (reason === null) return;
+    act(b, () => call("reviewWalletTopUpRequest", {requestId: b.dataset.reject, action: "reject", rejectionReason: reason}), "تم الرفض");
+  });
+};
+
+/* ---- deposits (عربون) ---- */
+RENDER.deposits = async () => {
+  const f = pageState.filter ?? "review";
+  const map = {review:["payment_under_review"], release:["release_requested","release_approved"], disputed:["disputed"], held:["deposit_held"]};
+  const rows = (await fetchList("deposit_transactions", f === "all" ? [] : [where("status","in",map[f])])).sort(byNewest("updatedAt","createdAt"));
+  let html = filterBar([["review","دفع بانتظار المراجعة"],["release","طلبات التحرير"],["disputed","نزاعات"],["held","محجوز"],["all","الكل"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async r => {
+    const s = r.status;
+    let actions = "";
+    if (s === "payment_under_review") actions = `<button class="btn-sm btn-ok" data-dep="${esc(r.id)}" data-to="deposit_held">✅ تأكيد استلام العربون</button><button class="btn-sm btn-bad" data-dep="${esc(r.id)}" data-to="payment_rejected" data-reason="1">❌ رفض الدفع</button>`;
+    else if (s === "release_requested") actions = `<button class="btn-sm btn-ok" data-dep="${esc(r.id)}" data-to="release_approved">✅ موافقة على التحرير</button>`;
+    else if (s === "release_approved") actions = `<button class="btn-sm btn-ok" data-dep="${esc(r.id)}" data-to="released">💵 تم التحويل للمالك</button>`;
+    else if (s === "disputed") actions = `<button class="btn-sm btn-ok" data-dep="${esc(r.id)}" data-to="released">💵 تحرير للمالك</button><button class="btn-sm btn-bad" data-dep="${esc(r.id)}" data-to="refunded">↩️ إرجاع للمشتري</button>`;
+    return `<div class="item"><div class="head"><span class="title">عربون ${money(r.depositAmount)} ${esc(r.currency || "$")}</span>${pill(s)}</div>
+      <div class="meta">المشتري: ${await userLabel(r.firstUserId)}<br>المالك: ${await userLabel(r.secondUserId)}<br>
+      سعر الحجز: ${money(r.bookingPrice)} · رقم عملية شام كاش: <b>${esc(r.shamCashTransactionId || "—")}</b><br>آخر تحديث: ${fmtDate(first(r,"updatedAt","createdAt"))}</div>
+      <div class="actions">${r.receiptImageUrl ? `<a class="btn-sm" href="${esc(r.receiptImageUrl)}" target="_blank" rel="noopener"><button class="btn-sm">🧾 الإيصال</button></a>` : ""}${actions}</div>${rawDetails(r)}</div>`;
+  }))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-dep]").forEach(b => b.onclick = async () => {
+    let note = "";
+    if (b.dataset.reason) { note = await ask({title:"سبب الرفض", input:"اكتب السبب", okText:"رفض", danger:true}); if (note === null) return; }
+    else if (!await ask({title:"تأكيد", text:`رح تتغيّر حالة العربون إلى «${esc(STATUS_AR[b.dataset.to])}». متأكد؟`})) return;
+    act(b, () => updateDoc(doc(db, "deposit_transactions", b.dataset.dep), {
+      status: b.dataset.to, updatedAt: serverTimestamp(), reviewedBy: auth.currentUser.uid, reviewedAt: serverTimestamp(), ...(note ? {note} : {}),
+    }));
+  });
+};
+
+/* ---- live withdrawals ---- */
+RENDER.withdrawals = async () => {
+  const f = pageState.filter ?? "open";
+  const cons = f === "open" ? [where("status","in",["pending","approved"])] : f === "all" ? [] : [where("status","==",f)];
+  const rows = (await fetchList("live_withdrawals", cons)).sort(byNewest("createdAt","updatedAt"));
+  let html = filterBar([["open","المفتوحة"],["paid","المدفوعة"],["rejected","المرفوضة"],["all","الكل"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `
+    <div class="item"><div class="head"><span class="title">${money((r.amountCents||0)/100)} $</span>${pill(r.status)}<span class="muted">${esc(r.method || "")}</span></div>
+      <div class="meta">صاحب الطلب: ${await userLabel(r.ownerId)}<br>بيانات الاستلام: <b>${esc(first(r,"account","accountId","destination","phone","shamCashId") || "—")}</b><br>التاريخ: ${fmtDate(first(r,"createdAt"))}${r.transferReference ? `<br>رقم التحويل: ${esc(r.transferReference)}` : ""}${r.reason ? `<br>السبب: ${esc(r.reason)}` : ""}</div>
+      <div class="actions">
+        ${r.status === "pending" ? `<button class="btn-sm btn-ok" data-w="approve" data-id="${esc(r.id)}">✅ موافقة</button>` : ""}
+        ${r.status === "approved" ? `<button class="btn-sm btn-ok" data-w="paid" data-id="${esc(r.id)}">💵 تم الدفع</button>` : ""}
+        ${["pending","approved"].includes(r.status) ? `<button class="btn-sm btn-bad" data-w="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}
+      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-w]").forEach(b => b.onclick = async () => {
+    const action = b.dataset.w; const data = {id: b.dataset.id, action};
+    if (action === "reject") { const r = await ask({title:"رفض السحب", input:"سبب الرفض", okText:"رفض", danger:true}); if (r === null) return; data.reason = r || "مرفوض"; }
+    else if (action === "paid") { const r = await ask({title:"تأكيد الدفع", input:"رقم عملية التحويل (شام كاش)", okText:"تأكيد"}); if (!r) return; data.transferReference = r; }
+    else if (!await ask({title:"موافقة على السحب", text:"بعد الموافقة لازم تحوّل المبلغ وبعدين تضغط «تم الدفع»."})) return;
+    act(b, () => call("liveReviewWithdrawal", data));
+  });
+};
+
+/* ---- verification ---- */
+RENDER.verify = async () => {
+  const f = pageState.filter ?? "pending";
+  const rows = (await fetchList("verification_requests", f === "all" ? [] : [where("status","==",f)])).sort(byNewest("submittedAt","createdAt"));
+  let html = filterBar([["pending","المعلّقة"],["approved","المقبولة"],["rejected","المرفوضة"],["all","الكل"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `
+    <div class="item"><div class="head"><span class="title">طلب توثيق</span>${pill(r.status)}<span class="muted">${esc(first(r,"documentType","type"))}</span></div>
+      <div class="meta">المستخدم: ${await userLabel(r.userId)}<br>التاريخ: ${fmtDate(first(r,"submittedAt","createdAt"))}${r.rejectionReason ? `<br>سبب الرفض: ${esc(r.rejectionReason)}` : ""}</div>
+      <div class="actions"><button class="btn-sm" data-doc="${esc(r.id)}">🪪 عرض الوثيقة</button>
+        ${r.status === "pending" ? `<button class="btn-sm btn-ok" data-v="approve" data-id="${esc(r.id)}">✅ توثيق</button><button class="btn-sm btn-bad" data-v="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}
+        ${r.status === "approved" ? `<button class="btn-sm btn-bad" data-unv="${esc(r.userId)}">إلغاء التوثيق</button>` : ""}
+      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-doc]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { const r = await call("getVerificationDocument", {requestId: b.dataset.doc});
+      openModal(`<h3>الوثيقة</h3><img src="data:${esc(r.contentType)};base64,${r.documentBase64}"><p class="muted">هالصورة خاصة، لا تشاركها مع حدا.</p><div class="actions"><button id="mc">إغلاق</button></div>`);
+      $("#mc").onclick = closeModal;
+    } catch(e){ toast(errMsg(e), true); } b.disabled = false;
+  });
+  $("#view").querySelectorAll("[data-v]").forEach(b => b.onclick = async () => {
+    const data = {requestId: b.dataset.id, action: b.dataset.v};
+    if (b.dataset.v === "reject") { const r = await ask({title:"رفض التوثيق", input:"السبب (مثلاً: الصورة غير واضحة)", okText:"رفض", danger:true}); if (r === null) return; data.rejectionReason = r; }
+    act(b, () => call("reviewVerificationRequest", data));
+  });
+  $("#view").querySelectorAll("[data-unv]").forEach(b => b.onclick = async () => {
+    if (!await ask({title:"إلغاء التوثيق", text:"رح تنشال علامة التوثيق من الحساب.", danger:true, okText:"إلغاء التوثيق"})) return;
+    act(b, () => call("unverifyAccount", {userId: b.dataset.unv}));
+  });
+};
+
+/* ---- reel promotions ---- */
+RENDER.promos = async () => {
+  const f = pageState.filter ?? "pending";
+  const rows = (await fetchList("reel_promotions", f === "all" ? [] : [where("status","==",f)])).sort(byNewest("createdAt"));
+  let html = filterBar([["pending","المعلّقة"],["active","الفعّالة"],["ended","المنتهية"],["rejected","المرفوضة"],["all","الكل"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `
+    <div class="item"><div class="head"><span class="title">ترويج فيديو</span>${pill(r.status)}<span class="muted">${esc(first(r,"days","durationDays") ? first(r,"days","durationDays")+" يوم" : "")}</span></div>
+      <div class="meta">صاحب الفيديو: ${await userLabel(r.ownerId)}<br>المبلغ: ${money(first(r,"budget","amount","price","totalPrice"))} · الفيديو: ${esc(r.reelId || "—")}<br>التاريخ: ${fmtDate(r.createdAt)}</div>
+      <div class="actions">${r.status === "pending" ? `<button class="btn-sm btn-ok" data-pr="approve" data-id="${esc(r.id)}">✅ موافقة</button><button class="btn-sm btn-bad" data-pr="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-pr]").forEach(b => b.onclick = async () => {
+    const data = {promotionId: b.dataset.id, action: b.dataset.pr};
+    if (b.dataset.pr === "reject") { const r = await ask({title:"رفض الترويج", input:"السبب", okText:"رفض", danger:true}); if (r === null) return; data.rejectionReason = r; }
+    act(b, () => call("reviewReelPromotion", data));
+  });
+};
+
+/* ---- businesses ---- */
+RENDER.businesses = async () => {
+  const f = pageState.filter ?? "pending";
+  const rows = (await fetchList("businesses", f === "all" ? [] : [where("status","==",f)])).sort(byNewest("updatedAt","createdAt"));
+  let html = filterBar([["pending","المعلّقة"],["approved","المقبولة"],["suspended","الموقوفة"],["rejected","المرفوضة"],["all","الكل"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `
+    <div class="item"><div class="head">${first(r,"logoUrl","imageUrl","coverUrl") ? `<img class="thumb" src="${esc(first(r,"logoUrl","imageUrl","coverUrl"))}">` : ""}<span class="title">${esc(first(r,"name","title") || "بدون اسم")}</span>${pill(r.status)}<span class="muted">${esc(first(r,"category","type"))}</span></div>
+      <div class="meta">المالك: ${await userLabel(first(r,"ownerId","userId"))}<br>${esc(first(r,"description","about")).slice(0,220)}</div>
+      <div class="actions">
+        ${r.status !== "approved" ? `<button class="btn-sm btn-ok" data-bz="approve" data-id="${esc(r.id)}">✅ موافقة</button>` : ""}
+        ${r.status === "pending" ? `<button class="btn-sm" data-bz="request_changes" data-id="${esc(r.id)}">✏️ طلب تعديل</button><button class="btn-sm btn-bad" data-bz="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}
+        ${r.status === "approved" ? `<button class="btn-sm btn-bad" data-bz="suspend" data-id="${esc(r.id)}">⛔ إيقاف</button>` : ""}
+      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-bz]").forEach(b => b.onclick = async () => {
+    const data = {businessId: b.dataset.id, action: b.dataset.bz};
+    if (b.dataset.bz !== "approve") { const r = await ask({title:"السبب", input:"اكتب السبب (بيوصل لصاحب المحل)", okText:"تأكيد", danger:b.dataset.bz!=="request_changes"}); if (r === null) return; data.rejectionReason = r || "—"; }
+    act(b, () => call("reviewBusiness", data));
+  });
+};
+
+/* ---- reports ---- */
+RENDER.reports = async () => {
+  const f = pageState.filter ?? "user";
+  let rows = [];
+  if (f === "user") rows = (await fetchList("user_reports", [], 200)).sort(byNewest("createdAt"));
+  else rows = (await fetchList("live_reports", [], 200)).sort(byNewest("createdAt","updatedAt"));
+  let html = filterBar([["user","بلاغات المستخدمين والمحتوى"],["live","بلاغات البث"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `
+    <div class="item"><div class="head"><span class="title">${esc(first(r,"reason","category","type") || "بلاغ")}</span>${pill(r.status || "open")}<span class="muted">${esc(first(r,"targetType","contentType"))}</span></div>
+      <div class="meta">المُبلِّغ: ${await userLabel(first(r,"reporterId","uid"))}<br>المُبلَّغ عنه: ${first(r,"reportedUserId","targetUserId","hostId") ? await userLabel(first(r,"reportedUserId","targetUserId","hostId")) : esc(first(r,"targetId","reelId","listingId","roomId") || "—")}<br>
+      ${esc(first(r,"details","description","message","note")).slice(0,300)}<br>التاريخ: ${fmtDate(first(r,"createdAt","updatedAt"))}</div>
+      <div class="actions">${(r.status || "open") !== "resolved" ? `<button class="btn-sm btn-ok" data-rp="${esc(r.id)}">✅ تمت المعالجة</button>` : ""}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-rp]").forEach(b => b.onclick = () => act(b, () =>
+    updateDoc(doc(db, f === "user" ? "user_reports" : "live_reports", b.dataset.rp), f === "user" ? {status:"resolved", resolvedAt: serverTimestamp(), resolvedBy: auth.currentUser.uid} : {status:"resolved"})));
+};
+
+/* ---- listings ---- */
+RENDER.listings = async () => {
+  const q = (pageState.q || "").trim();
+  let rows;
+  if (q) { const s = await getDoc(doc(db, "listings", q)); rows = s.exists() ? [{id:s.id, ...s.data()}] : (await fetchList("listings", [where("ownerId","==",q)], 100)); }
+  else rows = await fetchList("listings", [orderBy("createdAt","desc")], 60);
+  let html = `<div class="row" style="margin-bottom:14px"><input id="q" placeholder="رقم الإعلان أو رقم المستخدم (UID)" value="${esc(q)}" style="flex:1;min-width:220px"><button class="btn-sm" id="qb">بحث</button>${q ? `<button class="btn-sm" id="qc">مسح</button>` : ""}</div>
+    <p class="muted" style="margin-top:0">${q ? "" : "آخر 60 إعلان"}</p>`;
+  if (!rows.length) html += emptyBox("ما لقيت إعلانات");
+  html += `<div class="list">${(await Promise.all(rows.map(async r => {
+    const img = Array.isArray(r.images) ? r.images[0] : first(r,"imageUrl","coverImage","thumbnail");
+    const hidden = r.status === "deleted" || r.status === "hidden";
+    return `<div class="item"><div class="head">${img ? `<img class="thumb" src="${esc(typeof img === "string" ? img : img?.url)}">` : ""}<div><div class="title">${esc(first(r,"title","name") || "بدون عنوان")}</div>
+      <div class="muted" style="font-size:13px">${esc(first(r,"listingType","category"))} · ${money(first(r,"price"))} ${esc(first(r,"currency"))}</div></div>${pill(r.status || "active")}</div>
+      <div class="meta">المالك: ${await userLabel(r.ownerId)}<br>${esc(first(r,"city","address","governorate"))} · ${fmtDate(r.createdAt)} · رقم: ${esc(r.id)}</div>
+      <div class="actions">${hidden ? `<button class="btn-sm btn-ok" data-ls="restore" data-id="${esc(r.id)}" data-prev="${esc(r.statusBeforeAdmin || "")}">↩️ إرجاع الإعلان</button>` : `<button class="btn-sm btn-bad" data-ls="hide" data-id="${esc(r.id)}" data-cur="${esc(r.status || "")}">🙈 إخفاء/حذف الإعلان</button>`}</div>${rawDetails(r)}</div>`;
+  }))).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
+  $("#q").onkeydown = e => { if (e.key === "Enter") $("#qb").click(); };
+  if ($("#qc")) $("#qc").onclick = () => { pageState.q = ""; render(); };
+  $("#view").querySelectorAll("[data-ls]").forEach(b => b.onclick = async () => {
+    if (b.dataset.ls === "hide") {
+      if (!await ask({title:"إخفاء الإعلان", text:"الإعلان رح يختفي من التطبيق (بتقدر ترجّعه بعدين).", danger:true, okText:"إخفاء"})) return;
+      act(b, () => updateDoc(doc(db,"listings",b.dataset.id), {statusBeforeAdmin: b.dataset.cur || "active", status:"deleted", hiddenByAdmin:true, hiddenAt: serverTimestamp(), updatedAt: serverTimestamp()}));
+    } else {
+      const prev = b.dataset.prev;
+      act(b, () => updateDoc(doc(db,"listings",b.dataset.id), {status: prev ? prev : deleteField(), statusBeforeAdmin: deleteField(), hiddenByAdmin: deleteField(), updatedAt: serverTimestamp()}));
+    }
+  });
+};
+
+/* ---- reels ---- */
+RENDER.reels = async () => {
+  const q = (pageState.q || "").trim();
+  let rows;
+  if (q) { const s = await getDoc(doc(db, "reels", q)); rows = s.exists() ? [{id:s.id, ...s.data()}] : (await fetchList("reels", [where("userId","==",q)], 100)); }
+  else rows = await fetchList("reels", [orderBy("createdAt","desc")], 60);
+  let html = `<div class="row" style="margin-bottom:14px"><input id="q" placeholder="رقم الفيديو أو رقم المستخدم (UID)" value="${esc(q)}" style="flex:1;min-width:220px"><button class="btn-sm" id="qb">بحث</button>${q ? `<button class="btn-sm" id="qc">مسح</button>` : ""}</div><p class="muted" style="margin-top:0">${q ? "" : "آخر 60 فيديو"}</p>`;
+  if (!rows.length) html += emptyBox("ما لقيت فيديوهات");
+  html += `<div class="list">${(await Promise.all(rows.map(async r => {
+    const thumb = first(r,"thumbnailUrl","thumbnail","coverUrl");
+    const hidden = r.moderationStatus && r.moderationStatus !== "approved";
+    return `<div class="item"><div class="head">${thumb ? `<img class="thumb" src="${esc(thumb)}">` : ""}<div><div class="title">${esc(first(r,"caption","title","description") || "فيديو").slice(0,90)}</div>
+      <div class="muted" style="font-size:13px">👁 ${esc(first(r,"viewsCount","views") || 0)} · ❤️ ${esc(first(r,"likesCount","likes") || 0)}</div></div>${pill(r.moderationStatus || "")}${pill(r.uploadStatus || "")}</div>
+      <div class="meta">صاحب الفيديو: ${await userLabel(r.userId)}<br>${fmtDate(r.createdAt)} · رقم: ${esc(r.id)}</div>
+      <div class="actions">${hidden ? `<button class="btn-sm btn-ok" data-rl="approved" data-id="${esc(r.id)}">↩️ إظهار الفيديو</button>` : `<button class="btn-sm btn-bad" data-rl="hidden" data-id="${esc(r.id)}">🙈 إخفاء الفيديو</button>`}</div>${rawDetails(r)}</div>`;
+  }))).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
+  $("#q").onkeydown = e => { if (e.key === "Enter") $("#qb").click(); };
+  if ($("#qc")) $("#qc").onclick = () => { pageState.q = ""; render(); };
+  $("#view").querySelectorAll("[data-rl]").forEach(b => b.onclick = async () => {
+    if (b.dataset.rl === "hidden" && !await ask({title:"إخفاء الفيديو", text:"الفيديو رح يختفي من التطبيق (بتقدر ترجّعه بعدين).", danger:true, okText:"إخفاء"})) return;
+    act(b, () => updateDoc(doc(db,"reels",b.dataset.id), {moderationStatus: b.dataset.rl, moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}));
+  });
+};
+
+/* ---- users ---- */
+RENDER.users = async () => {
+  const q = (pageState.q || "").trim();
+  let rows = [];
+  if (q) {
+    const tries = [doc(db,"users",q)];
+    const s = await getDoc(tries[0]);
+    if (s.exists()) rows = [{id:s.id, ...s.data()}];
+    else {
+      for (const field of ["email","username","phoneNumber","phone","displayName"]) {
+        rows = await fetchList("users", [where(field,"==",q)], 20);
+        if (rows.length) break;
+      }
+    }
+  } else rows = await fetchList("users", [orderBy("createdAt","desc")], 50);
+  let html = `<div class="row" style="margin-bottom:14px"><input id="q" placeholder="إيميل، اسم مستخدم، رقم هاتف، أو UID" value="${esc(q)}" style="flex:1;min-width:220px"><button class="btn-sm" id="qb">بحث</button>${q ? `<button class="btn-sm" id="qc">مسح</button>` : ""}</div><p class="muted" style="margin-top:0">${q ? "" : "آخر 50 مستخدم سجّلوا"}</p>`;
+  if (!rows.length) html += emptyBox("ما لقيت مستخدمين");
+  html += `<div class="list">${rows.map(u => {
+    const suspended = u.accountStatus === "suspended" || u.isSuspended === true;
+    const photo = first(u,"photoURL","photoUrl","avatarUrl");
+    return `<div class="item"><div class="head">${photo ? `<img class="thumb" src="${esc(photo)}" style="border-radius:50%">` : ""}<div><div class="title">${esc(first(u,"displayName","fullName","name","username") || "بدون اسم")} ${u.isVerified || u.verified ? "✔️" : ""}</div>
+      <div class="muted" style="font-size:13px">${esc(first(u,"email"))} ${esc(first(u,"phoneNumber","phone"))}</div></div>${pill(suspended ? "suspended" : (u.accountStatus || "active"))}</div>
+      <div class="meta">الرصيد: <b>${money(u.walletBalanceUsd)} $</b> · سجّل: ${fmtDate(u.createdAt)} · آخر دخول: ${fmtDate(u.lastLogin)}<br>UID: ${esc(u.id)}</div>
+      <div class="actions">${suspended ? `<button class="btn-sm btn-ok" data-us="active" data-id="${esc(u.id)}">✅ فك الإيقاف</button>` : `<button class="btn-sm btn-bad" data-us="suspended" data-id="${esc(u.id)}">⛔ إيقاف الحساب</button>`}
+      <button class="btn-sm" data-ul="${esc(u.id)}">🏠 إعلاناته</button><button class="btn-sm" data-ur="${esc(u.id)}">🎬 فيديوهاته</button></div>${rawDetails(u)}</div>`;
+  }).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
+  $("#q").onkeydown = e => { if (e.key === "Enter") $("#qb").click(); };
+  if ($("#qc")) $("#qc").onclick = () => { pageState.q = ""; render(); };
+  $("#view").querySelectorAll("[data-ul]").forEach(b => b.onclick = () => { current="listings"; pageState={q:b.dataset.ul}; buildNav(); render(); });
+  $("#view").querySelectorAll("[data-ur]").forEach(b => b.onclick = () => { current="reels"; pageState={q:b.dataset.ur}; buildNav(); render(); });
+  $("#view").querySelectorAll("[data-us]").forEach(b => b.onclick = async () => {
+    const to = b.dataset.us;
+    if (to === "suspended" && !await ask({title:"إيقاف الحساب", text:"صاحب الحساب ما رح يقدر يفوت على التطبيق لحد ما تفك الإيقاف.", danger:true, okText:"إيقاف"})) return;
+    act(b, () => updateDoc(doc(db,"users",b.dataset.id), to === "suspended"
+      ? {accountStatus:"suspended", isSuspended:true, suspendedAt: serverTimestamp(), suspendedBy: auth.currentUser.uid, updatedAt: serverTimestamp()}
+      : {accountStatus:"active", isSuspended:false, updatedAt: serverTimestamp()}));
+  });
+};
+
+/* ---- admins ---- */
+RENDER.admins = async () => {
+  const rows = await fetchList("admin_users", [], 50);
+  let html = `<p class="muted" style="line-height:1.9;margin-top:0">هدول الحسابات اللي بيقدروا يفوتوا على لوحة التحكم. لتضيف مدير جديد: لازم يكون عنده حساب بالتطبيق، اكتب إيميله وضيفه.</p>
+    <div class="row" style="margin-bottom:16px"><input id="newAdmin" placeholder="إيميل المدير الجديد" style="flex:1;min-width:220px"><button class="btn-gold btn-sm" id="addAdmin">➕ إضافة مدير</button></div>`;
+  html += `<div class="list">${(await Promise.all(rows.map(async a => {
+    const me = a.id === auth.currentUser.uid; const on = a.active !== false;
+    return `<div class="item"><div class="head"><span class="title">${await userLabel(a.id)}</span>${pill(on ? "active" : "suspended")}${me ? `<span class="pill">إنت</span>` : ""}</div>
+      <div class="meta">${a.email ? `الإيميل: ${esc(a.email)} · ` : ""}UID: ${esc(a.id)}</div>
+      <div class="actions">${me ? "" : (on ? `<button class="btn-sm btn-bad" data-ad="off" data-id="${esc(a.id)}">⛔ سحب صلاحية المدير</button>` : `<button class="btn-sm btn-ok" data-ad="on" data-id="${esc(a.id)}">✅ إرجاع الصلاحية</button>`)}</div></div>`;
+  }))).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#addAdmin").onclick = async () => {
+    const email = $("#newAdmin").value.trim().toLowerCase(); if (!email) return;
+    const b = $("#addAdmin"); b.disabled = true;
+    try {
+      const found = await fetchList("users", [where("email","==",email)], 2);
+      if (!found.length) throw new Error("ما لقيت مستخدم بهالإيميل بالتطبيق. خليه يسجّل دخول بالتطبيق أول مرة.");
+      if (!await ask({title:"إضافة مدير", text:`رح تعطي <b>${esc(email)}</b> صلاحية كاملة على لوحة التحكم. متأكد؟`})) { b.disabled=false; return; }
+      await setDoc(doc(db,"admin_users",found[0].id), {active:true, email, addedBy: auth.currentUser.uid, createdAt: serverTimestamp()}, {merge:true});
+      toast("انضاف المدير ✅"); render();
+    } catch(e){ toast(errMsg(e), true); b.disabled = false; }
+  };
+  $("#view").querySelectorAll("[data-ad]").forEach(b => b.onclick = async () => {
+    if (b.dataset.ad === "off" && !await ask({title:"سحب الصلاحية", text:"هالحساب ما عاد رح يقدر يفوت على لوحة التحكم.", danger:true, okText:"سحب الصلاحية"})) return;
+    act(b, () => updateDoc(doc(db,"admin_users",b.dataset.id), {active: b.dataset.ad === "on", updatedAt: serverTimestamp(), updatedBy: auth.currentUser.uid}));
+  });
+};
+
+/* ---------- auth ---------- */
+$("#googleBtn").onclick = async () => {
+  $("#loginErr").textContent = "";
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch(e){ $("#loginErr").textContent = e.code === "auth/unauthorized-domain" ? "هالموقع لسا مش مسموح بـ Firebase (Authorized domains)." : errMsg(e); }
+};
+$("#logoutBtn").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, async user => {
+  if (!user) { $("#app").style.display = "none"; $("#login").style.display = "flex"; return; }
+  let ok = false;
+  try { const s = await getDoc(doc(db, "admin_users", user.uid)); ok = s.exists() && s.data().active !== false; } catch { ok = false; }
+  if (!ok) {
+    $("#loginErr").innerHTML = `الحساب <b>${esc(user.email)}</b> مش مدير.`;
+    await signOut(auth); return;
+  }
+  $("#login").style.display = "none"; $("#app").style.display = "block";
+  $("#meEmail").textContent = user.email;
+  const h = location.hash.replace("#",""); current = PAGES[h] ? h : "home";
+  buildNav(); render();
+});
+</script>
+</body>
+</html>
