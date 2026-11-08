@@ -561,31 +561,11 @@ RENDER.users = async () => {
 
 /* ---- admins ---- */
 RENDER.admins = async () => {
-  const rows = await fetchList("admin_users", [], 50);
-  let html = `<p class="muted" style="line-height:1.9;margin-top:0">هدول الحسابات اللي بيقدروا يفوتوا على لوحة التحكم. لتضيف مدير جديد: لازم يكون عنده حساب بالتطبيق، اكتب إيميله وضيفه.</p>
-    <div class="row" style="margin-bottom:16px"><input id="newAdmin" placeholder="إيميل المدير الجديد" style="flex:1;min-width:220px"><button class="btn-gold btn-sm" id="addAdmin">➕ إضافة مدير</button></div>`;
-  html += `<div class="list">${(await Promise.all(rows.map(async a => {
-    const me = a.id === auth.currentUser.uid; const on = a.active !== false;
-    return `<div class="item"><div class="head"><span class="title">${await userLabel(a.id)}</span>${pill(on ? "active" : "suspended")}${me ? `<span class="pill">إنت</span>` : ""}</div>
-      <div class="meta">${a.email ? `الإيميل: ${esc(a.email)} · ` : ""}UID: ${esc(a.id)}</div>
-      <div class="actions">${me ? "" : (on ? `<button class="btn-sm btn-bad" data-ad="off" data-id="${esc(a.id)}">⛔ سحب صلاحية المدير</button>` : `<button class="btn-sm btn-ok" data-ad="on" data-id="${esc(a.id)}">✅ إرجاع الصلاحية</button>`)}</div></div>`;
-  }))).join("")}</div>`;
-  $("#view").innerHTML = html;
-  $("#addAdmin").onclick = async () => {
-    const email = $("#newAdmin").value.trim().toLowerCase(); if (!email) return;
-    const b = $("#addAdmin"); b.disabled = true;
-    try {
-      const found = await fetchList("users", [where("email","==",email)], 2);
-      if (!found.length) throw new Error("ما لقيت مستخدم بهالإيميل بالتطبيق. خليه يسجّل دخول بالتطبيق أول مرة.");
-      if (!await ask({title:"إضافة مدير", text:`رح تعطي <b>${esc(email)}</b> صلاحية كاملة على لوحة التحكم. متأكد؟`})) { b.disabled=false; return; }
-      await setDoc(doc(db,"admin_users",found[0].id), {active:true, email, addedBy: auth.currentUser.uid, createdAt: serverTimestamp()}, {merge:true});
-      toast("انضاف المدير ✅"); render();
-    } catch(e){ toast(errMsg(e), true); b.disabled = false; }
-  };
-  $("#view").querySelectorAll("[data-ad]").forEach(b => b.onclick = async () => {
-    if (b.dataset.ad === "off" && !await ask({title:"سحب الصلاحية", text:"هالحساب ما عاد رح يقدر يفوت على لوحة التحكم.", danger:true, okText:"سحب الصلاحية"})) return;
-    act(b, () => updateDoc(doc(db,"admin_users",b.dataset.id), {active: b.dataset.ad === "on", updatedAt: serverTimestamp(), updatedBy: auth.currentUser.uid}));
-  });
+  const me = auth.currentUser;
+  $("#view").innerHTML = `<div class="item"><div class="head"><span class="title">${await userLabel(me.uid)}</span>${pill("active")}<span class="pill">إنت</span></div>
+    <div class="meta">${esc(me.email)} · UID: ${esc(me.uid)}</div></div>
+    <p class="muted" style="line-height:1.9">🔒 للحماية: قائمة المدراء ما بتنعدل من هون أبداً، حتى لو حدا سرق جلسة الدخول ما بيقدر يضيف حاله مدير.<br>
+    لإضافة مدير جديد أو شيل مدير، قول لـ Claude وهو بيعملها من Firebase مباشرة.</p>`;
 };
 
 /* ---------- auth ---------- */
