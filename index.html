@@ -135,7 +135,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, setDoc, serverTimestamp, getCountFromServer, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
@@ -591,10 +591,17 @@ RENDER.admins = async () => {
 /* ---------- auth ---------- */
 $("#googleBtn").onclick = async () => {
   $("#loginErr").textContent = "";
-  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-  catch(e){ $("#loginErr").textContent = e.code === "auth/unauthorized-domain" ? "هالموقع لسا مش مسموح بـ Firebase (Authorized domains)." : errMsg(e); }
+  const provider = new GoogleAuthProvider(); provider.setCustomParameters({prompt: "select_account"});
+  try { await signInWithPopup(auth, provider); }
+  catch(e){
+    if (["auth/popup-blocked","auth/popup-closed-by-user","auth/cancelled-popup-request","auth/web-storage-unsupported"].includes(e.code)) {
+      $("#loginErr").textContent = "عم حوّلك لصفحة Google…"; return signInWithRedirect(auth, provider);
+    }
+    $("#loginErr").textContent = e.code === "auth/unauthorized-domain" ? "هالموقع لسا مش مسموح بـ Firebase (Authorized domains)." : errMsg(e);
+  }
 };
 $("#logoutBtn").onclick = () => signOut(auth);
+getRedirectResult(auth).catch(e => { $("#loginErr").textContent = errMsg(e); });
 
 onAuthStateChanged(auth, async user => {
   if (!user) { $("#app").style.display = "none"; $("#login").style.display = "flex"; return; }
