@@ -136,7 +136,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, setDoc, serverTimestamp, getCountFromServer, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, setDoc, serverTimestamp, getCountFromServer, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 const app = initializeApp({
@@ -542,12 +542,16 @@ RENDER.users = async () => {
       <div class="muted" style="font-size:13px">${esc(first(u,"email"))} ${esc(first(u,"phoneNumber","phone"))}</div></div>${pill(suspended ? "suspended" : (u.accountStatus || "active"))}</div>
       <div class="meta">الرصيد: <b>${money(u.walletBalanceUsd)} $</b> · سجّل: ${fmtDate(u.createdAt)} · آخر دخول: ${fmtDate(u.lastLogin)}<br>UID: ${esc(u.id)}</div>
       <div class="actions">${suspended ? `<button class="btn-sm btn-ok" data-us="active" data-id="${esc(u.id)}">✅ فك الإيقاف</button>` : `<button class="btn-sm btn-bad" data-us="suspended" data-id="${esc(u.id)}">⛔ إيقاف الحساب</button>`}
+      <button class="btn-sm btn-gold" data-bal="${esc(u.id)}" data-cur="${esc(u.walletBalanceUsd || 0)}">💰 تعديل الرصيد</button>
+      <button class="btn-sm" data-hist="${esc(u.id)}">📜 سجل الرصيد</button>
       <button class="btn-sm" data-ul="${esc(u.id)}">🏠 إعلاناته</button><button class="btn-sm" data-ur="${esc(u.id)}">🎬 فيديوهاته</button></div>${rawDetails(u)}</div>`;
   }).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
   $("#q").onkeydown = e => { if (e.key === "Enter") $("#qb").click(); };
   if ($("#qc")) $("#qc").onclick = () => { pageState.q = ""; render(); };
+  $("#view").querySelectorAll("[data-bal]").forEach(b => b.onclick = () => editBalance(b.dataset.bal, Number(b.dataset.cur) || 0));
+  $("#view").querySelectorAll("[data-hist]").forEach(b => b.onclick = () => balanceHistory(b.dataset.hist));
   $("#view").querySelectorAll("[data-ul]").forEach(b => b.onclick = () => { current="listings"; pageState={q:b.dataset.ul}; buildNav(); render(); });
   $("#view").querySelectorAll("[data-ur]").forEach(b => b.onclick = () => { current="reels"; pageState={q:b.dataset.ur}; buildNav(); render(); });
   $("#view").querySelectorAll("[data-us]").forEach(b => b.onclick = async () => {
@@ -558,6 +562,57 @@ RENDER.users = async () => {
       : {accountStatus:"active", isSuspended:false, updatedAt: serverTimestamp()}));
   });
 };
+
+/* ---- balance tools ---- */
+function editBalance(uid, current){
+  openModal(`<h3>💰 تعديل الرصيد</h3>
+    <div class="muted" style="line-height:1.9">الرصيد الحالي: <b style="color:var(--gold2)">${money(current)} $</b><br>التعديل ما بيبعت أي إشعار للمستخدم.</div>
+    <div class="row" style="margin-top:12px">
+      <select id="balMode"><option value="add">➕ إضافة مبلغ</option><option value="sub">➖ سحب مبلغ</option><option value="set">✏️ تحديد الرصيد بالضبط</option></select>
+      <input id="balAmt" type="number" min="0" step="0.01" placeholder="المبلغ بالدولار" style="flex:1">
+    </div>
+    <input id="balNote" placeholder="ملاحظة لإلك (اختياري) — مثلاً: تعويض، تصحيح خطأ" style="margin-top:8px">
+    <div class="muted" id="balPreview" style="margin-top:10px"></div>
+    <div class="actions"><button class="btn-gold" id="balOk">حفظ</button><button id="balNo">إلغاء</button></div>`);
+  const calc = () => { const a = Math.max(0, Number($("#balAmt").value) || 0); const m = $("#balMode").value;
+    const n = m === "add" ? current + a : m === "sub" ? Math.max(0, current - a) : a; return Math.round(n * 100) / 100; };
+  const upd = () => { $("#balPreview").innerHTML = `الرصيد الجديد رح يصير: <b style="color:var(--gold2)">${money(calc())} $</b>`; };
+  $("#balAmt").oninput = upd; $("#balMode").onchange = upd; upd();
+  $("#balNo").onclick = closeModal;
+  $("#balOk").onclick = async () => {
+    const a = Number($("#balAmt").value); if (!(a >= 0) || $("#balAmt").value === "") { toast("اكتب المبلغ", true); return; }
+    const newBal = calc(); const b = $("#balOk"); b.disabled = true;
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "users", uid), {walletBalanceUsd: newBal, walletBalanceUpdatedAt: serverTimestamp(), updatedAt: serverTimestamp()});
+      batch.set(doc(collection(db, "users", uid, "wallet_transactions")), {
+        type: "admin_adjustment", mode: $("#balMode").value, amount: Math.round((newBal - current) * 100) / 100,
+        balanceBefore: current, balanceAfter: newBal, currency: "USD", note: $("#balNote").value.trim(),
+        approvedBy: auth.currentUser.uid, createdAt: serverTimestamp(),
+      });
+      await batch.commit(); closeModal(); toast(`صار الرصيد ${money(newBal)} $ ✅`); render();
+    } catch(e){ console.error(e); toast(errMsg(e), true); b.disabled = false; }
+  };
+}
+async function balanceHistory(uid){
+  openModal(`<h3>📜 سجل الرصيد</h3><div class="loading">عم يحمّل…</div>`);
+  try {
+    const [tx, tops] = await Promise.all([
+      fetchList(`users/${uid}/wallet_transactions`, [], 200).catch(() => []),
+      fetchList("wallet_top_up_requests", [where("userId","==",uid)], 200).catch(() => []),
+    ]);
+    const TYPE = {top_up:"شحن رصيد (مقبول)", admin_adjustment:"تعديل من الأدمن", purchase:"شراء", promotion:"ترويج", gift:"هدية", deposit:"عربون", withdrawal:"سحب"};
+    const rows = [
+      ...tx.map(t => ({d: t.createdAt, amount: Number(t.amount) || 0, label: TYPE[t.type] || t.type || "حركة", after: t.balanceAfter, note: t.note || t.sourceRequestId || "", status: ""})),
+      ...tops.filter(t => t.status !== "approved").map(t => ({d: first(t,"submittedAt","createdAt"), amount: Number(t.amount)||0, label: "طلب شحن", after: null, note: t.rejectionReason || "", status: t.status})),
+    ].sort((a,b) => ts(b.d) - ts(a.d));
+    $("#modal").innerHTML = `<h3>📜 سجل الرصيد</h3><div class="meta" style="margin-bottom:10px">${await userLabel(uid)}</div>
+      ${rows.length ? `<div class="list">${rows.map(r => `<div class="item" style="padding:10px 12px"><div class="head"><span class="title" style="color:${r.amount < 0 ? "#ff9a9d" : "#7ee2a8"}">${r.amount > 0 ? "+" : ""}${money(r.amount)} $</span><span>${esc(r.label)}</span>${pill(r.status)}</div>
+        <div class="meta">${fmtDate(r.d)}${r.after != null ? ` · الرصيد بعدها: ${money(r.after)} $` : ""}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>`).join("")}</div>` : emptyBox("ما في حركات على الرصيد")}
+      <div class="actions"><button id="mc">إغلاق</button></div>`;
+    $("#mc").onclick = closeModal;
+  } catch(e){ $("#modal").innerHTML = `<h3>📜 سجل الرصيد</h3><div class="empty">${esc(errMsg(e))}</div><div class="actions"><button id="mc">إغلاق</button></div>`; $("#mc").onclick = closeModal; }
+}
 
 /* ---- admins ---- */
 RENDER.admins = async () => {
