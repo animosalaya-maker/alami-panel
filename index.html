@@ -225,6 +225,7 @@ const PAGES = {
   listings:    {title:"الإعلانات", icon:"🏠"},
   reels:       {title:"الفيديوهات", icon:"🎬"},
   live:        {title:"البث المباشر", icon:"🔴"},
+  sounds:      {title:"الأصوات", icon:"🎵"},
   users:       {title:"المستخدمين", icon:"👤"},
   admins:      {title:"المدراء", icon:"🔐"},
 };
@@ -540,6 +541,25 @@ RENDER.live = async () => {
     if (!on && !await ask({title:"إيقاف البث المباشر", text:"ما حدا رح يقدر يبدأ بث جديد لحتى ترجع تشغّله.", danger:true, okText:"إيقاف"})) return;
     act(e.target, () => setDoc(doc(db,"live_config","settings"), {enabled: on, updatedAt: serverTimestamp(), updatedBy: auth.currentUser.uid}, {merge:true}), on ? "صار البث شغّال ✅" : "تم إيقاف البث");
   };
+};
+
+/* ---- sounds ---- */
+RENDER.sounds = async () => {
+  const showRemoved = pageState.removed === true;
+  const rows = await fetchList("sounds", [where("status","==", showRemoved ? "removed" : "active"), orderBy("createdAt","desc")], 80);
+  let html = `<div class="row" style="margin-bottom:14px"><button class="btn-sm" id="tg">${showRemoved ? "عرض الأصوات الشغّالة" : "عرض الأصوات المحذوفة"}</button></div>`;
+  if (!rows.length) html += emptyBox(showRemoved ? "ما في أصوات محذوفة" : "ما في أصوات لسّا");
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `<div class="item"><div class="head">${r.coverUrl ? `<img class="thumb" src="${esc(r.coverUrl)}">` : ""}<div><div class="title">${esc(r.title || "صوت")}</div>
+    <div class="muted" style="font-size:13px">🎬 ${esc(r.usageCount || 0)} فيديو ${r.isOriginal ? "· صوت أصلي من فيديو" : ""}</div></div></div>
+    <audio controls preload="none" src="${esc(r.audioUrl)}" style="width:100%;margin:8px 0"></audio>
+    <div class="meta">صاحب الصوت: ${await userLabel(r.ownerId)}<br>${fmtDate(r.createdAt)} · رقم: ${esc(r.id)}</div>
+    <div class="actions">${showRemoved ? `<button class="btn-sm btn-ok" data-snd="active" data-id="${esc(r.id)}">↩️ إرجاع الصوت</button>` : `<button class="btn-sm btn-bad" data-snd="removed" data-id="${esc(r.id)}">🗑 حذف الصوت (حقوق أو مخالفة)</button>`}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#tg").onclick = () => { pageState.removed = !showRemoved; render(); };
+  $("#view").querySelectorAll("[data-snd]").forEach(b => b.onclick = async () => {
+    if (b.dataset.snd === "removed" && !await ask({title:"حذف الصوت", text:"الصوت رح يختفي من مكتبة الأصوات (الفيديوهات اللي استخدمته بتضل).", danger:true, okText:"حذف"})) return;
+    act(b, () => updateDoc(doc(db,"sounds",b.dataset.id), {status: b.dataset.snd, moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}));
+  });
 };
 
 /* ---- users ---- */
