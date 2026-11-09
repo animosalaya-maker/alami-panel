@@ -162,7 +162,7 @@ const money = n => (Number(n) || 0).toLocaleString("en", {maximumFractionDigits:
 const first = (o, ...keys) => { for (const k of keys) { if (o?.[k] !== undefined && o[k] !== null && o[k] !== "") return o[k]; } return ""; };
 const STATUS_AR = {
   pending:"قيد المراجعة", approved:"مقبول", rejected:"مرفوض", paid:"مدفوع", cancelled:"ملغي", canceled:"ملغي",
-  active:"فعّال", suspended:"موقوف", deleted:"محذوف", hidden:"مخفي", ended:"منتهي", ready:"جاهز",
+  live:"مباشر", active:"فعّال", suspended:"موقوف", deleted:"محذوف", hidden:"مخفي", ended:"منتهي", ready:"جاهز",
   awaiting_payment:"بانتظار الدفع", payment_under_review:"الدفع قيد المراجعة", payment_rejected:"الدفع مرفوض",
   deposit_held:"العربون محجوز", release_requested:"طلب تحرير", release_approved:"تحرير مقبول", released:"محرَّر",
   disputed:"نزاع", refunded:"مسترجَع", open:"مفتوح", resolved:"تمت المعالجة", new:"جديد", request_changes:"مطلوب تعديل",
@@ -224,6 +224,7 @@ const PAGES = {
   reports:     {title:"البلاغات", icon:"🚩"},
   listings:    {title:"الإعلانات", icon:"🏠"},
   reels:       {title:"الفيديوهات", icon:"🎬"},
+  live:        {title:"البث المباشر", icon:"🔴"},
   users:       {title:"المستخدمين", icon:"👤"},
   admins:      {title:"المدراء", icon:"🔐"},
 };
@@ -516,6 +517,29 @@ RENDER.reels = async () => {
     if (b.dataset.rl === "hidden" && !await ask({title:"إخفاء الفيديو", text:"الفيديو رح يختفي من التطبيق (بتقدر ترجّعه بعدين).", danger:true, okText:"إخفاء"})) return;
     act(b, () => updateDoc(doc(db,"reels",b.dataset.id), {moderationStatus: b.dataset.rl, moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}));
   });
+};
+
+/* ---- live ---- */
+RENDER.live = async () => {
+  const cfgSnap = await getDoc(doc(db, "live_config", "settings"));
+  const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
+  const enabled = cfg.enabled === true;
+  let rows = [];
+  try { rows = await fetchList("live_rooms", [where("status","==","live")], 60); } catch(e) { console.error(e); }
+  let html = `<div class="item"><div class="head"><div><div class="title">حالة البث المباشر بالتطبيق</div>
+    <div class="muted" style="font-size:13px">${enabled ? "✅ البث شغّال — المستخدمين بيقدروا يبثوا" : "⛔ البث مسكّر — ما حدا بيقدر يبدأ بث"}</div></div></div>
+    <div class="actions">${enabled ? `<button class="btn-sm btn-bad" id="liveToggle" data-v="0">إيقاف البث المباشر</button>` : `<button class="btn-sm btn-ok" id="liveToggle" data-v="1">تشغيل البث المباشر</button>`}</div></div>
+    <h3 style="margin:18px 0 8px">عم يبثوا هلّق (${rows.length})</h3>`;
+  if (!rows.length) html += emptyBox("ما في حدا عم يبث هلّق");
+  html += `<div class="list">${(await Promise.all(rows.map(async r => `<div class="item"><div class="head">${r.photoUrl ? `<img class="thumb" src="${esc(r.photoUrl)}">` : ""}<div><div class="title">${esc(r.title || "بث مباشر")}</div>
+    <div class="muted" style="font-size:13px">👁 ${esc(r.viewerCount || 0)} مشاهد</div></div>${pill("live")}</div>
+    <div class="meta">صاحب البث: ${await userLabel(r.ownerId)}<br>بدأ: ${fmtDate(first(r,"startedAt","createdAt"))} · رقم: ${esc(r.id)}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#liveToggle").onclick = async (e) => {
+    const on = e.target.dataset.v === "1";
+    if (!on && !await ask({title:"إيقاف البث المباشر", text:"ما حدا رح يقدر يبدأ بث جديد لحتى ترجع تشغّله.", danger:true, okText:"إيقاف"})) return;
+    act(e.target, () => setDoc(doc(db,"live_config","settings"), {enabled: on, updatedAt: serverTimestamp(), updatedBy: auth.currentUser.uid}, {merge:true}), on ? "صار البث شغّال ✅" : "تم إيقاف البث");
+  };
 };
 
 /* ---- users ---- */
