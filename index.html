@@ -226,6 +226,12 @@ const PAGES = {
   reels:       {title:"الفيديوهات", icon:"🎬"},
   live:        {title:"البث المباشر", icon:"🔴"},
   sounds:      {title:"الأصوات", icon:"🎵"},
+  hashtags:    {title:"الهاشتاغات", icon:"#️⃣"},
+  weekly:      {title:"ترتيب الأسبوع", icon:"🏆"},
+  reviews:     {title:"التقييمات", icon:"⭐"},
+  pins:        {title:"تثبيت الخريطة", icon:"📍"},
+  referrals:   {title:"الدعوات", icon:"🎁"},
+  play:        {title:"مشتريات جوجل بلاي", icon:"🛒"},
   users:       {title:"المستخدمين", icon:"👤"},
   admins:      {title:"المدراء", icon:"🔐"},
 };
@@ -560,6 +566,134 @@ RENDER.sounds = async () => {
     if (b.dataset.snd === "removed" && !await ask({title:"حذف الصوت", text:"الصوت رح يختفي من مكتبة الأصوات (الفيديوهات اللي استخدمته بتضل).", danger:true, okText:"حذف"})) return;
     act(b, () => updateDoc(doc(db,"sounds",b.dataset.id), {status: b.dataset.snd, moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}));
   });
+};
+
+/* ---- hashtags ---- */
+const admin = (action, data={}) => call("adminGrowth", {action, ...data});
+RENDER.hashtags = async () => {
+  const rows = await fetchList("hashtags", [orderBy("postsCount","desc")], 100);
+  let html = `<p class="muted" style="margin-top:0">أكتر 100 هاشتاغ استخداماً. الهاشتاغ المخفي ما بيطلع بالاقتراحات.</p>`;
+  if (!rows.length) html += emptyBox("ما في هاشتاغات لسّا");
+  html += `<div class="list">${rows.map(r => `<div class="item"><div class="head"><span class="title">${esc(r.tag || "#"+r.id)}</span>${r.hidden ? pill("hidden") : ""}</div>
+    <div class="meta">🎬 ${money(r.postsCount)} منشور · 👁 ${money(r.viewsCount)} مشاهدة · آخر تحديث: ${fmtDate(r.updatedAt)}</div>
+    <div class="actions">${r.hidden ? `<button class="btn-sm btn-ok" data-ht="${esc(r.id)}" data-h="0">↩️ إظهار</button>` : `<button class="btn-sm btn-bad" data-ht="${esc(r.id)}" data-h="1">🙈 إخفاء</button>`}</div></div>`).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#view").querySelectorAll("[data-ht]").forEach(b => b.onclick = () => act(b, () => admin("hideHashtag", {key: b.dataset.ht, hidden: b.dataset.h === "1"})));
+};
+
+/* ---- weekly ranking ---- */
+function isoWeekKey(date = new Date()){
+  const local = new Date(date.getTime() + 3*3600*1000);
+  const d = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()));
+  const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return `${d.getUTCFullYear()}-W${String(Math.ceil(((d - y0)/86400000 + 1)/7)).padStart(2,"0")}`;
+}
+RENDER.weekly = async () => {
+  const off = Number(pageState.weekOff || 0);
+  const wk = isoWeekKey(new Date(Date.now() - off*7*86400000));
+  const [hosts, sups] = await Promise.all([
+    fetchList(`live_weekly/${wk}/hosts`, [orderBy("points","desc")], 30).catch(() => []),
+    fetchList(`live_weekly/${wk}/supporters`, [orderBy("points","desc")], 30).catch(() => []),
+  ]);
+  const medal = i => ["🥇","🥈","🥉"][i] || `${i+1}.`;
+  const board = (title, rows) => `<h3 style="margin:16px 0 8px">${title}</h3>${rows.length ? `<div class="list">${rows.map((r,i) => `<div class="item" style="padding:10px 12px"><div class="head">${r.photoUrl ? `<img class="thumb" src="${esc(r.photoUrl)}" style="border-radius:50%">` : ""}<span class="title">${medal(i)} ${esc(r.name || "—")}</span><span class="muted">💎 ${money(r.points)} نقطة · 🎁 ${money(r.gifts)} هدية</span></div><div class="meta">UID: ${esc(r.userId || r.id)}</div></div>`).join("")}</div>` : emptyBox("ما في هدايا بهالأسبوع")}`;
+  $("#view").innerHTML = `<div class="row" style="margin-bottom:10px"><button class="btn-sm" id="wPrev">→ الأسبوع اللي قبل</button><b style="padding:6px 10px">${esc(wk)}${off === 0 ? " (هالأسبوع)" : ""}</b>${off > 0 ? `<button class="btn-sm" id="wNext">الأسبوع اللي بعد ←</button>` : ""}</div>
+    <p class="muted" style="margin-top:0">الترتيب بيتصفّر كل اتنين الساعة 12 بالليل (توقيت إسطنبول).</p>
+    ${board("🎙 أكتر المضيفين (هدايا مستلمة)", hosts)}${board("💝 أكتر الداعمين (هدايا مرسلة)", sups)}`;
+  $("#wPrev").onclick = () => { pageState.weekOff = off + 1; render(); };
+  if ($("#wNext")) $("#wNext").onclick = () => { pageState.weekOff = off - 1; render(); };
+};
+
+/* ---- reviews ---- */
+RENDER.reviews = async () => {
+  const f = pageState.filter ?? "reports";
+  const data = await admin("reviews");
+  let html = filterBar([["reports","البلاغات"],["all","كل التقييمات"]]);
+  const stars = n => "★".repeat(Math.max(0, Math.min(5, Number(n)||0))) + "☆".repeat(5 - Math.max(0, Math.min(5, Number(n)||0)));
+  const TYPE = {user:"بائع", business:"محل", listing:"إعلان"};
+  if (f === "reports") {
+    const rows = data.reports.filter(r => r.status !== "resolved");
+    if (!rows.length) html += emptyBox("ما في بلاغات على التقييمات 👌");
+    html += `<div class="list">${(await Promise.all(rows.map(async r => {
+      const tk = `${r.targetType}_${r.targetId}`; const author = r.authorId;
+      const rev = data.reviews.find(x => x.targetKey === tk && x.authorId === author);
+      return `<div class="item"><div class="head"><span class="title">🚩 بلاغ على تقييم ${esc(TYPE[r.targetType] || r.targetType)}</span>${pill(r.status)}</div>
+        <div class="meta">${rev ? `<b style="color:var(--gold2)">${stars(rev.stars)}</b> «${esc(rev.text || "بدون تعليق")}»<br>` : "التقييم انحذف أو مش ظاهر<br>"}
+        كاتب التقييم: ${await userLabel(author)}<br>المبلِّغ: ${await userLabel(r.reporterId)}<br>السبب: ${esc(r.reason || "—")} · ${fmtDate(r.createdAt)}</div>
+        <div class="actions">${rev ? `<button class="btn-sm btn-bad" data-del="${esc(tk)}" data-a="${esc(author)}">🗑 حذف التقييم</button>` : ""}<button class="btn-sm" data-res="${esc(r.id)}">✔️ تجاهل البلاغ</button></div></div>`;
+    }))).join("")}</div>`;
+  } else {
+    const rows = data.reviews;
+    if (!rows.length) html += emptyBox("ما في تقييمات لسّا");
+    html += `<div class="list">${(await Promise.all(rows.map(async r => `<div class="item"><div class="head"><span class="title" style="color:var(--gold2)">${stars(r.stars)}</span><span class="muted">${esc(TYPE[r.targetType] || r.targetType || "")} · ${esc(r.targetId || "")}</span></div>
+      <div class="meta">«${esc(r.text || "بدون تعليق")}»<br>الكاتب: ${await userLabel(r.authorId)} · ${fmtDate(r.updatedAt || r.createdAt)}</div>
+      <div class="actions"><button class="btn-sm btn-bad" data-del="${esc(r.targetKey)}" data-a="${esc(r.authorId)}">🗑 حذف</button></div></div>`))).join("")}</div>`;
+  }
+  $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (!await ask({title:"حذف التقييم", text:"التقييم رح ينحذف ومعدّل النجوم بيتحدّث لحاله.", danger:true, okText:"حذف"})) return;
+    act(b, () => admin("deleteReview", {targetKey: b.dataset.del, authorId: b.dataset.a}), "انحذف التقييم");
+  });
+  $("#view").querySelectorAll("[data-res]").forEach(b => b.onclick = () => act(b, () => admin("resolveReport", {reportId: b.dataset.res})));
+};
+
+/* ---- map pins ---- */
+RENDER.pins = async () => {
+  const f = pageState.filter ?? "active";
+  const data = await admin("pins");
+  const rows = data.pins.filter(p => f === "all" || (f === "active" ? p.active : !p.active));
+  let html = `<div class="cards" style="margin-bottom:14px"><div class="stat"><div class="l">مثبّت هلّق</div><div class="n">${data.pins.filter(p=>p.active).length}</div></div>
+    <div class="stat"><div class="l">دخل آخر 30 يوم</div><div class="n">${money(data.revenue30Usd)} $</div></div><div class="stat"><div class="l">الدخل الكلي (آخر 200)</div><div class="n">${money(data.revenueUsd)} $</div></div></div>`;
+  html += filterBar([["active","الشغّالة"],["ended","المنتهية والملغاة"],["all","الكل"]]);
+  if (!rows.length) html += emptyBox();
+  html += `<div class="list">${(await Promise.all(rows.map(async p => `<div class="item"><div class="head"><span class="title">📍 ${p.targetType === "business" ? "محل" : "إعلان"} · ${esc(p.days)} يوم · ${money(p.priceUsd)} $</span>${pill(p.status === "cancelled" ? "cancelled" : p.active ? "active" : "ended")}</div>
+    <div class="meta">صاحبه: ${await userLabel(p.ownerId)}<br>من: ${fmtDate(p.createdAt)} · لحد: ${fmtDate(p.pinnedUntil)}<br>رقم ${p.targetType === "business" ? "المحل" : "الإعلان"}: ${esc(p.targetId)}${p.refunded ? " · تم إرجاع المبلغ" : ""}</div>
+    <div class="actions">${p.active ? `<button class="btn-sm btn-bad" data-cp="${esc(p.id)}">⛔ إلغاء التثبيت</button><button class="btn-sm" data-cpr="${esc(p.id)}">↩️ إلغاء مع إرجاع المبلغ</button>` : ""}</div>${rawDetails(p)}</div>`))).join("")}</div>`;
+  $("#view").innerHTML = html; bindFilters();
+  const cancel = async (b, refund) => {
+    if (!await ask({title:"إلغاء التثبيت", text: refund ? "رح يرجع المبلغ لمحفظة صاحب الإعلان." : "التثبيت رح يوقف بدون إرجاع المبلغ.", danger:true, okText:"إلغاء التثبيت"})) return;
+    act(b, () => admin("cancelPin", {pinId: refund ? b.dataset.cpr : b.dataset.cp, refund}), "انلغى التثبيت");
+  };
+  $("#view").querySelectorAll("[data-cp]").forEach(b => b.onclick = () => cancel(b, false));
+  $("#view").querySelectorAll("[data-cpr]").forEach(b => b.onclick = () => cancel(b, true));
+};
+
+/* ---- referrals ---- */
+RENDER.referrals = async () => {
+  const data = await admin("referrals");
+  let html = `<div class="cards" style="margin-bottom:14px"><div class="stat"><div class="l">كل الدعوات</div><div class="n">${money(data.totalReferrals)}</div></div>
+    <div class="stat"><div class="l">نقاط انعطت (آخر 150 دعوة)</div><div class="n">${money(data.pointsGiven)}</div></div></div>
+    <h3 style="margin:8px 0">🏅 أكتر الناس دعوة</h3>`;
+  html += data.inviters.length ? `<div class="list">${data.inviters.map(u => `<div class="item" style="padding:10px 12px"><div class="head"><span class="title">${esc(u.name || "بدون اسم")}</span><span class="muted">${esc(u.email)}</span>${u.referralBlocked ? pill("suspended") : ""}</div>
+    <div class="meta">👥 ${money(u.referralCount)} صديق · 💎 ${money(u.referralPointsEarned)} نقطة · UID: ${esc(u.id)}</div>
+    <div class="actions">${u.referralBlocked ? `<button class="btn-sm btn-ok" data-rb="${esc(u.id)}" data-v="0">✅ فك الحظر</button>` : `<button class="btn-sm btn-bad" data-rb="${esc(u.id)}" data-v="1">🚫 حظر من الدعوات (مشبوه)</button>`}</div></div>`).join("")}</div>` : emptyBox("ما حدا دعا حدا لسّا");
+  html += `<h3 style="margin:18px 0 8px">🆕 آخر الدعوات</h3>`;
+  html += data.referrals.length ? `<div class="list">${(await Promise.all(data.referrals.map(async r => `<div class="item" style="padding:10px 12px">
+    <div class="meta">الصديق الجديد: ${await userLabel(r.id)}<br>دعاه: ${await userLabel(r.inviterId)} · الكود: <b>${esc(r.code || "—")}</b> · ${fmtDate(r.createdAt)}</div></div>`))).join("")}</div>` : emptyBox("ما في دعوات لسّا");
+  $("#view").innerHTML = html;
+  $("#view").querySelectorAll("[data-rb]").forEach(b => b.onclick = async () => {
+    const block = b.dataset.v === "1";
+    if (block && !await ask({title:"حظر من الدعوات", text:"هالشخص ما رح ياخد نقاط على دعوات جديدة. النقاط القديمة بتضل.", danger:true, okText:"حظر"})) return;
+    act(b, () => admin("flagReferral", {userId: b.dataset.rb, blocked: block}));
+  });
+};
+
+/* ---- Google Play purchases ---- */
+RENDER.play = async () => {
+  const data = await admin("playPurchases");
+  const NAMES = {gift_points_100:"100 نقطة", gift_points_550:"550 نقطة", gift_points_1150:"1150 نقطة", gift_points_3000:"3000 نقطة", gift_points_6500:"6500 نقطة",
+    wallet_credit_5:"رصيد 5$", wallet_credit_10:"رصيد 10$", wallet_credit_25:"رصيد 25$", wallet_credit_50:"رصيد 50$", wallet_credit_100:"رصيد 100$"};
+  let html = `<div class="cards" style="margin-bottom:14px"><div class="stat"><div class="l">عدد المشتريات (آخر 200)</div><div class="n">${data.purchases.length}</div></div>
+    <div class="stat"><div class="l">المبلغ التقريبي</div><div class="n">${money(data.grossUsd)} $</div></div>
+    <div class="stat"><div class="l">إلك بعد عمولة جوجل (تقريباً 85%)</div><div class="n">${money(data.netUsdEstimate)} $</div></div></div>
+    <p class="muted" style="margin-top:0">الأرقام تقديرية حسب الأسعار المقترحة. المبلغ الحقيقي بيطلع بـ Google Play Console ← التقارير المالية.</p>`;
+  const prods = Object.entries(data.byProduct);
+  if (prods.length) html += `<div class="list" style="margin-bottom:14px">${prods.map(([k,v]) => `<div class="item" style="padding:8px 12px"><div class="head"><span class="title">${esc(NAMES[k] || k)}</span><span class="muted">${v.count} مرة · ${money(v.usd)} $</span></div></div>`).join("")}</div>`;
+  if (!data.purchases.length) html += emptyBox("ما في مشتريات لسّا");
+  html += `<div class="list">${(await Promise.all(data.purchases.map(async p => `<div class="item" style="padding:10px 12px"><div class="head"><span class="title">${esc(NAMES[p.productId] || p.productId)}</span><span class="muted">${money(p.priceUsd)} $</span>${p.regionCode ? `<span class="pill">${esc(p.regionCode)}</span>` : ""}</div>
+    <div class="meta">المشتري: ${await userLabel(p.userId)}<br>${p.kind === "points" ? `💎 ${money(p.points)} نقطة` : `💰 ${money((p.creditCents||0)/100)} $ رصيد`} · ${fmtDate(p.createdAt)}${p.orderId ? ` · الطلب: ${esc(p.orderId)}` : ""}</div></div>`))).join("")}</div>`;
+  $("#view").innerHTML = html;
 };
 
 /* ---- users ---- */
