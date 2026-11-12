@@ -136,7 +136,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, setDoc, serverTimestamp, getCountFromServer, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, setDoc, serverTimestamp, getCountFromServer, deleteField, writeBatch, deleteDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 const app = initializeApp({
@@ -232,6 +232,7 @@ const PAGES = {
   pins:        {title:"تثبيت الخريطة", icon:"📍"},
   referrals:   {title:"الدعوات", icon:"🎁"},
   play:        {title:"مشتريات جوجل بلاي", icon:"🛒"},
+  buses:       {title:"الباصات", icon:"🚌"},
   users:       {title:"المستخدمين", icon:"👤"},
   admins:      {title:"المدراء", icon:"🔐"},
 };
@@ -579,6 +580,86 @@ RENDER.hashtags = async () => {
     <div class="actions">${r.hidden ? `<button class="btn-sm btn-ok" data-ht="${esc(r.id)}" data-h="0">↩️ إظهار</button>` : `<button class="btn-sm btn-bad" data-ht="${esc(r.id)}" data-h="1">🙈 إخفاء</button>`}</div></div>`).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#view").querySelectorAll("[data-ht]").forEach(b => b.onclick = () => act(b, () => admin("hideHashtag", {key: b.dataset.ht, hidden: b.dataset.h === "1"})));
+};
+
+/* ---- buses (Syria, free: OpenStreetMap + admin edits + passengers) ---- */
+const BUS_CITIES = ["دمشق","ريف دمشق","حلب","حمص","حماة","اللاذقية","طرطوس","درعا","السويداء","دير الزور","الحسكة","إدلب","القامشلي"];
+RENDER.buses = async () => {
+  const city = pageState.busCity ?? "";
+  const cons = city ? [where("city","==",city)] : [];
+  const [lines, live] = await Promise.all([
+    fetchList("bus_lines", cons, 300),
+    fetchList("bus_live", [], 500).catch(() => []),
+  ]);
+  const now = Date.now();
+  const liveBy = {};
+  for (const l of live) { if (now - ts(l.updatedAt) < 120000) liveBy[l.lineId] = (liveBy[l.lineId] || 0) + 1; }
+  lines.sort((a,b) => String(a.nameAr || a.name).localeCompare(String(b.nameAr || b.name), "ar"));
+  let html = `<p class="muted" style="margin-top:0">الخطوط والمواقف بتنسحب ببلاش من OpenStreetMap. فيك تعدّل أي خط (الاسم، اللون، كل كم دقيقة، أوقات الدوام). الخط اللي بتعدّله ما بيتغيّر لما تعيد السحب.</p>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">
+      <select id="busCity"><option value="">كل المدن</option>${BUS_CITIES.map(c => `<option ${c===city?"selected":""}>${esc(c)}</option>`).join("")}</select>
+      <button class="btn-gold" id="busImport">⬇️ سحب الخطوط من OpenStreetMap${city ? " — "+esc(city) : ""}</button>
+    </div>
+    <p class="muted">عدد الخطوط: ${lines.length} · ركّاب عم يشاركوا هلق: ${Object.values(liveBy).reduce((a,b)=>a+b,0)}</p>`;
+  if (!lines.length) html += emptyBox("ما في خطوط لسّا. اختار مدينة واكبس «سحب الخطوط».");
+  html += `<div class="list">${lines.map(l => `<div class="item"><div class="head">
+      <span style="display:inline-block;width:14px;height:14px;border-radius:4px;background:#${esc(l.color || "999")}"></span>
+      <span class="title">${esc(l.nameAr || l.name || l.id)}</span>${l.active === false ? pill("hidden") : ""}${l.adminEdited ? `<span class="muted">✏️ معدّل</span>` : ""}
+      ${liveBy[l.id] ? `<span class="pill live">🚌 ${liveBy[l.id]} مباشر</span>` : ""}</div>
+    <div class="meta">${esc(l.city || "—")} · ${(l.stops || []).length} موقف · كل ${esc(l.headwayMin ?? 15)} د · ${esc(l.startTime || "06:00")}–${esc(l.endTime || "22:00")} · المصدر: ${esc(l.source || "—")}</div>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px">
+      <input data-f="nameAr" data-id="${esc(l.id)}" value="${esc(l.nameAr || l.name || "")}" placeholder="الاسم" style="min-width:180px">
+      <input data-f="color" data-id="${esc(l.id)}" value="${esc(l.color || "")}" placeholder="لون (E53935)" style="width:90px">
+      <input data-f="headwayMin" data-id="${esc(l.id)}" type="number" min="1" max="240" value="${esc(l.headwayMin ?? 15)}" style="width:70px" title="كل كم دقيقة">
+      <input data-f="startTime" data-id="${esc(l.id)}" value="${esc(l.startTime || "06:00")}" style="width:70px" title="بداية الدوام">
+      <input data-f="endTime" data-id="${esc(l.id)}" value="${esc(l.endTime || "22:00")}" style="width:70px" title="نهاية الدوام">
+    </div>
+    <div class="actions">
+      <button class="btn-sm btn-ok" data-bsave="${esc(l.id)}">💾 حفظ</button>
+      <button class="btn-sm" data-bact="${esc(l.id)}" data-on="${l.active === false ? "1" : "0"}">${l.active === false ? "↩️ تفعيل" : "🙈 إيقاف"}</button>
+      <button class="btn-sm" data-bstop="${esc(l.id)}">➕ موقف</button>
+      <button class="btn-sm btn-bad" data-bdel="${esc(l.id)}">🗑 حذف</button>
+    </div></div>`).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#busCity").onchange = e => { pageState.busCity = e.target.value; render(); };
+  $("#busImport").onclick = async e => {
+    const c = $("#busCity").value;
+    if (!c) { toast("اختار مدينة أول", true); return; }
+    if (!await ask({title:"سحب الخطوط", text:`رح نسحب خطوط الباصات والمواقف لـ ${esc(c)} من OpenStreetMap. ممكن ياخد دقيقة أو دقيقتين.`, okText:"ابدأ"})) return;
+    toast("عم نسحب… لا تسكّر الصفحة");
+    act(e.target, async () => { const r = await call("importOsmBusRoutes", {city: c}); toast(`تم: ${r.lines} خط · ${r.stops} موقف`); });
+  };
+  const val = (id, f) => $("#view").querySelector(`[data-id="${CSS.escape(id)}"][data-f="${f}"]`).value.trim();
+  $("#view").querySelectorAll("[data-bsave]").forEach(b => b.onclick = () => {
+    const id = b.dataset.bsave;
+    const head = Math.max(1, Math.min(240, parseInt(val(id,"headwayMin"),10) || 15));
+    const color = val(id,"color").replace("#","");
+    const time = s => /^\d{2}:\d{2}$/.test(s) ? s : null;
+    const st = time(val(id,"startTime")), en = time(val(id,"endTime"));
+    if (!st || !en) { toast("الوقت لازم يكون متل 06:00", true); return; }
+    if (color && !/^[0-9a-fA-F]{6}$/.test(color)) { toast("اللون لازم يكون 6 حروف متل E53935", true); return; }
+    act(b, () => updateDoc(doc(db,"bus_lines",id), {nameAr: val(id,"nameAr"), ...(color ? {color} : {}), headwayMin: head, startTime: st, endTime: en, adminEdited: true, updatedAt: serverTimestamp()}));
+  });
+  $("#view").querySelectorAll("[data-bact]").forEach(b => b.onclick = () => act(b, () => updateDoc(doc(db,"bus_lines",b.dataset.bact), {active: b.dataset.on === "1", adminEdited: true, updatedAt: serverTimestamp()})));
+  $("#view").querySelectorAll("[data-bdel]").forEach(b => b.onclick = async () => {
+    if (!await ask({title:"حذف الخط", text:"الخط رح ينحذف نهائياً (المواقف بتضل).", danger:true, okText:"حذف"})) return;
+    act(b, () => deleteDoc(doc(db,"bus_lines",b.dataset.bdel)));
+  });
+  $("#view").querySelectorAll("[data-bstop]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.bstop;
+    const v = await ask({title:"إضافة موقف للخط", text:"اكتب: الاسم، خط العرض، خط الطول — مثال: البرامكة, 33.5102, 36.2913 . الموقف بينضاف بآخر الخط.", input:"الاسم, 33.51, 36.29", okText:"إضافة"});
+    if (!v) return;
+    const parts = v.split(/[,،]/).map(s => s.trim());
+    const lat = parseFloat(parts[1]), lng = parseFloat(parts[2]);
+    if (!parts[0] || !isFinite(lat) || !isFinite(lng) || lat < 32 || lat > 38 || lng < 35 || lng > 43) { toast("المعلومات مش صحيحة", true); return; }
+    const sid = "adm_" + Date.now().toString(36);
+    act(b, async () => {
+      const batch = writeBatch(db);
+      batch.set(doc(db,"bus_stops",sid), {name: parts[0], lat, lng, lineIds: [id], source: "admin", updatedAt: serverTimestamp()});
+      batch.update(doc(db,"bus_lines",id), {stops: arrayUnion(sid), adminEdited: true, updatedAt: serverTimestamp()});
+      await batch.commit();
+    });
+  });
 };
 
 /* ---- weekly ranking ---- */
