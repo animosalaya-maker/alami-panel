@@ -232,7 +232,7 @@ const PAGES = {
   pins:        {title:"تثبيت الخريطة", icon:"📍"},
   referrals:   {title:"الدعوات", icon:"🎁"},
   play:        {title:"مشتريات جوجل بلاي", icon:"🛒"},
-  buses:       {title:"الباصات", icon:"🚌"},
+  buses:       {title:"الباصات", icon:"🚌", badge:()=>countOf("bus_line_submissions", where("status","==","pending"))},
   demo:        {title:"الإعلانات الوهمية", icon:"🧪"},
   streets:     {title:"صور الشوارع", icon:"📸", badge:()=>countOf("street_sessions", where("status","==","pending"))},
   users:       {title:"المستخدمين", icon:"👤"},
@@ -704,15 +704,37 @@ RENDER.demo = async () => {
 RENDER.buses = async () => {
   const city = pageState.busCity ?? "";
   const cons = city ? [where("city","==",city)] : [];
-  const [lines, live] = await Promise.all([
+  const [lines, live, subs] = await Promise.all([
     fetchList("bus_lines", cons, 300),
     fetchList("bus_live", [], 500).catch(() => []),
+    fetchList("bus_line_submissions", [where("status","==","pending")], 100).catch(() => []),
   ]);
   const now = Date.now();
   const liveBy = {};
   for (const l of live) { if (now - ts(l.updatedAt) < 120000) liveBy[l.lineId] = (liveBy[l.lineId] || 0) + 1; }
   lines.sort((a,b) => String(a.nameAr || a.name).localeCompare(String(b.nameAr || b.name), "ar"));
-  let html = `<p class="muted" style="margin-top:0">الخطوط والمواقف بتنسحب ببلاش من OpenStreetMap. فيك تعدّل أي خط (الاسم، اللون، كل كم دقيقة، أوقات الدوام). الخط اللي بتعدّله ما بيتغيّر لما تعيد السحب.</p>
+  // Lines recorded by people in the app («سجّل خط باص»), waiting for approval.
+  const decodePoly = (str) => { const pts = []; let i = 0, lat = 0, lng = 0;
+    while (i < (str || "").length) { for (const k of [0,1]) { let b, sh = 0, r = 0;
+      do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32);
+      const d = (r & 1) ? ~(r >> 1) : (r >> 1); if (k === 0) lat += d; else lng += d; }
+      pts.push([lat / 1e5, lng / 1e5]); } return pts; };
+  const miniMap = (sub) => { const pts = decodePoly(sub.pathEnc); if (pts.length < 2) return "";
+    const la = pts.map(p => p[0]), lo = pts.map(p => p[1]);
+    const [s0, n0, w0, e0] = [Math.min(...la), Math.max(...la), Math.min(...lo), Math.max(...lo)];
+    const W = 260, H = 160, sc = Math.min(W / ((e0 - w0) || 1e-4), H / ((n0 - s0) || 1e-4)) * 0.9;
+    const xy = (p) => [(W - (e0 - w0) * sc) / 2 + (p[1] - w0) * sc, (H - (n0 - s0) * sc) / 2 + (n0 - p[0]) * sc];
+    const d = pts.map((p, i) => (i ? "L" : "M") + xy(p).map(v => v.toFixed(1)).join(",")).join("");
+    const stops = (sub.stops || []).map(st => { const [x, y] = xy([st.lat, st.lng]); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#fff" stroke="#16140F" stroke-width="2"/>`; }).join("");
+    const mid = pts[Math.floor(pts.length / 2)];
+    return `<a href="https://www.openstreetmap.org/?mlat=${mid[0]}&mlon=${mid[1]}#map=14/${mid[0]}/${mid[1]}" target="_blank" title="افتح عالخريطة"><svg width="${W}" height="${H}" style="background:#1d1b16;border-radius:10px"><path d="${d}" fill="none" stroke="#E0B050" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>${stops}</svg></a>`; };
+  const subsHtml = subs.length ? `<h3 style="margin:6px 0 8px">🆕 خطوط من الناس بتستنى موافقتك (${subs.length})</h3>
+    <div class="list" style="margin-bottom:18px">${subs.map(sub => `<div class="item"><div class="head"><span class="title">${esc(sub.name)}</span><span class="pill">${esc(sub.city || "—")}</span></div>
+      <div class="meta">${esc(sub.from || "?")} ← ${esc(sub.to || "?")} · ${((sub.lengthM || 0) / 1000).toFixed(1)} كم · ${(sub.stops || []).length} موقف${sub.price ? " · الأجرة: " + esc(sub.price) : ""}</div>
+      <div style="margin-top:8px">${miniMap(sub)}</div>
+      <div class="row" style="gap:6px;margin-top:8px"><input data-subname="${esc(sub.id)}" value="${esc(sub.name)}" style="min-width:200px" title="فيك تعدّل الاسم قبل الموافقة"></div>
+      <div class="actions"><button class="btn-sm btn-ok" data-subok="${esc(sub.id)}">✅ موافقة (+50 نقطة للمرسل)</button><button class="btn-sm btn-bad" data-subno="${esc(sub.id)}">❌ رفض</button></div></div>`).join("")}</div>` : "";
+  let html = subsHtml + `<p class="muted" style="margin-top:0">الخطوط والمواقف بتنسحب ببلاش من OpenStreetMap. فيك تعدّل أي خط (الاسم، اللون، كل كم دقيقة، أوقات الدوام). الخط اللي بتعدّله ما بيتغيّر لما تعيد السحب.</p>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">
       <select id="busCity"><option value="">كل المدن</option>${BUS_CITIES.map(c => `<option ${c===city?"selected":""}>${esc(c)}</option>`).join("")}</select>
       <button class="btn-gold" id="busImport">⬇️ سحب الخطوط من OpenStreetMap${city ? " — "+esc(city) : ""}</button>
@@ -739,6 +761,15 @@ RENDER.buses = async () => {
     </div></div>`).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#busCity").onchange = e => { pageState.busCity = e.target.value; render(); };
+  $("#view").querySelectorAll("[data-subok]").forEach(b => b.onclick = () => {
+    const id = b.dataset.subok;
+    const name = $("#view").querySelector(`[data-subname="${CSS.escape(id)}"]`).value.trim();
+    act(b, () => call("adminBusSubmission", {id, action: "approve", name}), "انضاف الخط ✅");
+  });
+  $("#view").querySelectorAll("[data-subno]").forEach(b => b.onclick = async () => {
+    if (!await ask({title:"رفض الخط", text:"الخط ما رح يطلع عالخريطة.", danger:true, okText:"رفض"})) return;
+    act(b, () => call("adminBusSubmission", {id: b.dataset.subno, action: "reject"}), "انرفض");
+  });
   $("#busImport").onclick = async e => {
     const c = $("#busCity").value;
     if (!c) { toast("اختار مدينة أول", true); return; }
