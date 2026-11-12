@@ -233,6 +233,7 @@ const PAGES = {
   referrals:   {title:"الدعوات", icon:"🎁"},
   play:        {title:"مشتريات جوجل بلاي", icon:"🛒"},
   buses:       {title:"الباصات", icon:"🚌"},
+  demo:        {title:"الإعلانات الوهمية", icon:"🧪"},
   streets:     {title:"صور الشوارع", icon:"📸", badge:()=>countOf("street_sessions", where("status","==","pending"))},
   users:       {title:"المستخدمين", icon:"👤"},
   admins:      {title:"المدراء", icon:"🔐"},
@@ -622,6 +623,84 @@ RENDER.streets = async () => {
 
 /* ---- buses (Syria, free: OpenStreetMap + admin edits + passengers) ---- */
 const BUS_CITIES = ["دمشق","ريف دمشق","حلب","حمص","حماة","اللاذقية","طرطوس","درعا","السويداء","دير الزور","الحسكة","إدلب","القامشلي"];
+RENDER.demo = async () => {
+  const info = await call("adminDemoDataCount", {});
+  const cities = info.cities || [];
+  const TYPE_AR = {apartment:"شقة", house:"بيت", villa:"فيلا", land:"أرض", shop:"محل", office:"مكتب", warehouse:"مستودع", car:"سيارة"};
+  const types = info.types || Object.keys(TYPE_AR);
+  const mode = pageState.demoMode || "random";
+  const cityBoxes = `<label class="row" style="gap:6px"><input type="checkbox" data-dcity="all"> <b>الكل</b></label>` +
+    cities.map(c => `<label class="row" style="gap:6px"><input type="checkbox" data-dcity="${esc(c)}"> ${esc(c)}</label>`).join("");
+  let html = `<div class="item" style="margin-bottom:14px">
+    <h3 style="margin:0 0 6px">🧪 الإعلانات الوهمية: <span style="color:var(--gold,#C9A23F)">${info.total}</span></h3>
+    <p class="muted" style="margin:0 0 12px">إعلانات للتجربة بس. رقمها بيبلّش بـ demo_ أو معلّمة «وهمية»، والإعلانات الحقيقية ما بتنمس أبداً.</p>
+    <button class="btn-bad" id="demoDelAll" ${info.total ? "" : "disabled"}>🗑 حذف كل الإعلانات الوهمية</button>
+  </div>
+  <div class="item" style="margin-bottom:14px">
+    <h3 style="margin:0 0 10px">➕ إنشاء إعلانات وهمية</h3>
+    <div class="row" style="gap:8px;margin-bottom:12px">
+      <button class="btn-sm ${mode==="random"?"btn-gold":""}" data-dmode="random">🎲 عشوائي</button>
+      <button class="btn-sm ${mode==="detail"?"btn-gold":""}" data-dmode="detail">⚙️ مفصّل</button>
+    </div>`;
+  if (mode === "random") {
+    html += `<p class="muted">اكتب العدد واختار المحافظات، والباقي (النوع، بيع/إيجار، السعر، الغرف، المساحة) بيطلع عشوائي ومنطقي.</p>
+      <div class="row" style="gap:8px;margin-bottom:10px"><b>العدد:</b> <input id="dCount" type="number" min="1" max="500" value="100" style="width:100px"></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;margin-bottom:12px">${cityBoxes}</div>`;
+  } else {
+    html += `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <select id="dCity">${cities.map(c => `<option>${esc(c)}</option>`).join("")}</select>
+        <select id="dCountSel"><option>10</option><option selected>25</option><option>50</option><option>100</option><option value="custom">عدد آخر…</option></select>
+        <input id="dCount" type="number" min="1" max="200" value="25" style="width:90px;display:none">
+        <select id="dRent"><option value="sale">بيع</option><option value="rent">إيجار</option><option value="mixed">بيع وإيجار</option></select>
+        <select id="dCur"><option>USD</option><option>SYP</option></select>
+        <input id="dMin" type="number" placeholder="أقل سعر" style="width:120px">
+        <input id="dMax" type="number" placeholder="أعلى سعر" style="width:120px">
+      </div>
+      <div class="row" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">${types.map(t => `<label class="row" style="gap:4px"><input type="checkbox" data-dtype="${esc(t)}" ${t==="apartment"?"checked":""}> ${esc(TYPE_AR[t]||t)}</label>`).join("")}</div>
+      <p class="muted" style="margin-top:0">إذا تركت السعر فاضي، بيطلع سعر منطقي حسب النوع والمدينة.</p>`;
+  }
+  html += `<button class="btn-gold" id="demoGen">✨ إنشاء</button></div>`;
+  html += `<div class="item" style="margin-bottom:14px"><h3 style="margin:0 0 10px">الدفعات</h3>`;
+  html += (info.batches || []).length ? `<div class="list">${info.batches.map(b => `<div class="item"><div class="head">
+      <span class="title">${esc(b.city || "—")}</span><span class="pill">${b.count} إعلان</span></div>
+      <div class="meta">${b.createdAt ? new Date(b.createdAt).toLocaleString("ar") : "مدمجة مع التطبيق"}</div>
+      <div class="actions"><button class="btn-sm btn-bad" data-dbatch="${esc(b.batchId)}">🗑 حذف هالدفعة</button></div></div>`).join("")}</div>` : emptyBox("ما في إعلانات وهمية.");
+  html += `</div>`;
+  $("#view").innerHTML = html;
+  $("#view").querySelectorAll("[data-dmode]").forEach(b => b.onclick = () => { pageState.demoMode = b.dataset.dmode; render(); });
+  const sel = $("#dCountSel");
+  if (sel) sel.onchange = () => { const c = sel.value === "custom"; $("#dCount").style.display = c ? "" : "none"; if (!c) $("#dCount").value = sel.value; };
+  const all = $("#view").querySelector('[data-dcity="all"]');
+  if (all) all.onchange = () => $("#view").querySelectorAll("[data-dcity]").forEach(x => x.checked = all.checked);
+  $("#demoGen").onclick = e => {
+    let data;
+    if (mode === "random") {
+      const picked = [...$("#view").querySelectorAll("[data-dcity]:checked")].map(x => x.dataset.dcity);
+      if (!picked.length) { toast("اختار محافظة وحدة على الأقل", true); return; }
+      data = {mode: "random", count: parseInt($("#dCount").value, 10) || 100, cities: picked.includes("all") ? "all" : picked};
+    } else {
+      const t = [...$("#view").querySelectorAll("[data-dtype]:checked")].map(x => x.dataset.dtype);
+      if (!t.length) { toast("اختار نوع واحد على الأقل", true); return; }
+      data = {city: $("#dCity").value, count: parseInt($("#dCount").value, 10) || 25, types: t, rentOrSale: $("#dRent").value,
+        currency: $("#dCur").value, priceMin: parseFloat($("#dMin").value) || 0, priceMax: parseFloat($("#dMax").value) || 0};
+    }
+    act(e.target, async () => { const r = await call("adminGenerateDemoData", data); toast(`تم إنشاء ${r.created} إعلان ✅`); });
+  };
+  const confirmDelete = async (title, text) => {
+    const v = await ask({title, text: text + `<br>للتأكيد اكتب: <b>حذف</b>`, input: "حذف", danger: true, okText: "حذف نهائي"});
+    if (v !== "حذف") { if (v !== null) toast("لازم تكتب «حذف» بالزبط", true); return false; }
+    return true;
+  };
+  $("#demoDelAll").onclick = async e => {
+    if (!await confirmDelete("حذف كل الإعلانات الوهمية", `رح ينحذف ${info.total} إعلان وهمي نهائياً. الإعلانات الحقيقية ما بتتأثر.`)) return;
+    act(e.target, async () => { const r = await call("adminDeleteDemoData", {}); toast(`انحذف ${r.deleted} إعلان`); });
+  };
+  $("#view").querySelectorAll("[data-dbatch]").forEach(b => b.onclick = async () => {
+    if (!await confirmDelete("حذف الدفعة", "رح تنحذف إعلانات هالدفعة نهائياً.")) return;
+    act(b, async () => { const r = await call("adminDeleteDemoData", {batchId: b.dataset.dbatch}); toast(`انحذف ${r.deleted} إعلان`); });
+  });
+};
+
 RENDER.buses = async () => {
   const city = pageState.busCity ?? "";
   const cons = city ? [where("city","==",city)] : [];
