@@ -233,6 +233,7 @@ const PAGES = {
   referrals:   {title:"الدعوات", icon:"🎁"},
   play:        {title:"مشتريات جوجل بلاي", icon:"🛒"},
   buses:       {title:"الباصات", icon:"🚌"},
+  streets:     {title:"صور الشوارع", icon:"📸", badge:()=>countOf("street_sessions", where("status","==","pending"))},
   users:       {title:"المستخدمين", icon:"👤"},
   admins:      {title:"المدراء", icon:"🔐"},
 };
@@ -580,6 +581,43 @@ RENDER.hashtags = async () => {
     <div class="actions">${r.hidden ? `<button class="btn-sm btn-ok" data-ht="${esc(r.id)}" data-h="0">↩️ إظهار</button>` : `<button class="btn-sm btn-bad" data-ht="${esc(r.id)}" data-h="1">🙈 إخفاء</button>`}</div></div>`).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#view").querySelectorAll("[data-ht]").forEach(b => b.onclick = () => act(b, () => admin("hideHashtag", {key: b.dataset.ht, hidden: b.dataset.h === "1"})));
+};
+
+/* ---- street photos ("صوّر شارعك" + Mapillary) ---- */
+RENDER.streets = async () => {
+  const st = pageState.streetStatus || "pending";
+  const cfgSnap = await getDoc(doc(db, "app_config", "street_view")).catch(() => null);
+  const cfg = cfgSnap && cfgSnap.exists() ? cfgSnap.data() : {};
+  const sessions = await fetchList("street_sessions", [where("status","==",st), orderBy("createdAt","desc")], 40);
+  const imgs = await Promise.all(sessions.map(s => fetchList("street_images", [where("sessionId","==",s.id), orderBy("index")], 60).catch(() => [])));
+  let html = `<p class="muted" style="margin-top:0">صور الشوارع اللي بيرفعها الناس. ما بتطلع للكل إلا بعد ما توافق. كل 5 صور مقبولة = نقطة هدايا للمستخدم (لحد 50 نقطة باليوم). انتبه لوجوه الناس وأرقام السيارات.</p>
+    <div class="item" style="margin-bottom:12px"><div class="head"><span class="title">🗺️ صور Mapillary المجانية</span>${cfg.enabled === false ? pill("hidden") : ""}</div>
+      <div class="muted" style="font-size:13px">حط «Client Token» من حسابك المجاني على mapillary.com/dashboard/developers حتى تطلع صور الشوارع الموجودة هناك بالتطبيق.</div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px">
+        <input id="mlyTok" style="flex:1;min-width:220px" placeholder="MLY|..." value="${esc(cfg.mapillaryClientToken || "")}">
+        <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="mlyOn" ${cfg.enabled === false ? "" : "checked"}> مفعّل</label>
+        <button class="btn-gold" id="mlySave">💾 حفظ</button>
+      </div></div>
+    <div class="row" style="gap:6px;margin-bottom:12px">${["pending","approved","rejected"].map(s => `<button class="${s===st?"btn-gold":""}" data-sst="${s}">${esc(STATUS_AR[s] || s)}</button>`).join("")}</div>`;
+  if (!sessions.length) html += emptyBox(st === "pending" ? "ما في صور ناطرة مراجعة 👌" : "ما في شي هون");
+  html += `<div class="list">${(await Promise.all(sessions.map(async (s, i) => {
+    const list = imgs[i];
+    const mode = {walk:"🚶 مشي", drive:"🚗 سيارة", pano:"🌐 صورة ٣٦٠"}[s.mode] || esc(s.mode || "");
+    return `<div class="item"><div class="head"><span class="title">${mode} · ${list.length} صورة</span>${pill(s.status)}${s.rewardPoints ? `<span class="muted">🎁 ${esc(s.rewardPoints)} نقطة</span>` : ""}</div>
+      <div class="meta">المستخدم: ${await userLabel(s.uid)} · ${fmtDate(s.createdAt)} · رقم: ${esc(s.id)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">${list.slice(0, 24).map(p => `<a href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc((+p.lat).toFixed(5))}, ${esc((+p.lng).toFixed(5))}"><img src="${esc(p.thumbUrl || p.url)}" loading="lazy" style="width:${p.is360 ? 144 : 72}px;height:72px;object-fit:cover;border-radius:8px"></a>`).join("")}${list.length > 24 ? `<span class="muted">+${list.length - 24}</span>` : ""}</div>
+      ${list[0] ? `<a class="muted" href="https://www.google.com/maps?q=${esc(list[0].lat)},${esc(list[0].lng)}" target="_blank" rel="noopener">📍 شوف المكان</a>` : ""}
+      <div class="actions">${s.status !== "approved" ? `<button class="btn-sm btn-ok" data-smod="approve" data-id="${esc(s.id)}">✅ قبول ونشر</button>` : ""}${s.status !== "rejected" ? `<button class="btn-sm btn-bad" data-smod="reject" data-id="${esc(s.id)}">❌ رفض</button>` : ""}</div></div>`;
+  }))).join("")}</div>`;
+  $("#view").innerHTML = html;
+  $("#view").querySelectorAll("[data-sst]").forEach(b => b.onclick = () => { pageState.streetStatus = b.dataset.sst; render(); });
+  $("#mlySave").onclick = () => act($("#mlySave"), () => setDoc(doc(db, "app_config", "street_view"), {
+    mapillaryClientToken: $("#mlyTok").value.trim(), enabled: $("#mlyOn").checked, updatedAt: serverTimestamp(),
+  }, {merge: true}), "انحفظ ✅");
+  $("#view").querySelectorAll("[data-smod]").forEach(b => b.onclick = async () => {
+    if (b.dataset.smod === "reject" && !await ask({title:"رفض الصور", text:"كل صور هالجولة رح تنرفض وما بتطلع.", danger:true, okText:"رفض"})) return;
+    act(b, () => call("adminStreetModerate", {sessionId: b.dataset.id, action: b.dataset.smod}));
+  });
 };
 
 /* ---- buses (Syria, free: OpenStreetMap + admin edits + passengers) ---- */
