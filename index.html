@@ -85,9 +85,17 @@
 
   /* modal + toast */
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
-  .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;max-width:560px;width:100%;max-height:90vh;overflow:auto}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;max-width:640px;width:100%;max-height:90vh;overflow:auto}
   .modal h3{margin:0 0 12px;color:var(--gold2)}
   .modal img{max-width:100%;border-radius:12px;display:block;margin:0 auto}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:8px 0}
+  .gallery img{width:100%;height:120px;object-fit:cover;border-radius:10px;cursor:zoom-in;margin:0}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px;margin:10px 0}
+  .kv b{color:var(--gold2);font-weight:600}
+  .warnbox{background:rgba(255,170,0,.12);border:1px solid rgba(255,170,0,.5);border-radius:12px;padding:10px;margin:10px 0}
+  .ulink{cursor:pointer;text-decoration:underline dotted}
+  .thumb{cursor:pointer}
+  .modal video{width:100%;max-height:60vh;border-radius:12px;background:#000}
   .modal .actions{display:flex;gap:8px;justify-content:flex-start;margin-top:16px;flex-wrap:wrap}
   .modal textarea,.modal input{width:100%;margin-top:6px}
   #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--gold);color:var(--text);padding:10px 18px;border-radius:12px;display:none;z-index:60;max-width:90vw}
@@ -133,6 +141,7 @@
 <div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
 <div id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -175,7 +184,7 @@ function errMsg(e){
   return m.replace(/^FirebaseError:\s*/,"");
 }
 function openModal(html){ $("#modal").innerHTML = html; $("#modalBg").style.display = "flex"; }
-function closeModal(){ $("#modalBg").style.display = "none"; $("#modal").innerHTML = ""; }
+function closeModal(){ try { if (hlsPlayer) { hlsPlayer.destroy(); hlsPlayer = null; } } catch {} $("#modalBg").style.display = "none"; $("#modal").innerHTML = ""; }
 $("#modalBg").addEventListener("click", e => { if (e.target.id === "modalBg") closeModal(); });
 
 function ask({title, text="", input=null, okText="تأكيد", danger=false}){
@@ -195,15 +204,117 @@ async function act(btn, fn, okMsg){
 function rawDetails(d){ return `<details><summary>كل التفاصيل</summary><pre>${esc(JSON.stringify(d, (k,v)=> { if (v && typeof v === "object" && typeof v.seconds === "number" && v.nanoseconds !== undefined) { const d = toDate(v); return d ? d.toISOString() : v; } return v; }, 2))}</pre></details>`; }
 
 const userCache = new Map();
+async function userInfo(uid){
+  if (!uid) return null;
+  if (!userCache.has(uid)) {
+    userCache.set(uid, (async () => {
+      const [u, p] = await Promise.all([
+        getDoc(doc(db, "users", uid)).then(s => s.exists() ? s.data() : null).catch(()=>null),
+        getDoc(doc(db, "public_profiles", uid)).then(s => s.exists() ? s.data() : null).catch(()=>null),
+      ]);
+      return {
+        id: uid,
+        name: first(u, "displayName", "fullName", "name") || first(p, "displayName", "name") || first(u, "username") || first(p, "username") || "بدون اسم",
+        username: first(p, "username") || first(u, "username"),
+        photo: first(p, "photoUrl", "photoURL") || first(u, "photoURL", "photoUrl", "avatarUrl"),
+        contact: first(u, "email", "phoneNumber", "phone"),
+        phone: first(u, "phoneNumber", "phone"),
+        followers: first(p, "followerCount", "followersCount"),
+        suspended: u?.accountStatus === "suspended" || u?.isSuspended === true,
+        createdAt: u?.createdAt,
+      };
+    })());
+  }
+  return userCache.get(uid);
+}
 async function userLabel(uid){
   if (!uid) return "—";
-  if (!userCache.has(uid)) {
-    userCache.set(uid, getDoc(doc(db, "users", uid)).then(s => s.exists() ? s.data() : null).catch(()=>null));
+  const u = await userInfo(uid);
+  return `<span class="ulink" data-user="${esc(uid)}" title="افتح الحساب">${u.photo ? `<img src="${esc(u.photo)}" style="width:22px;height:22px;border-radius:50%;vertical-align:middle;object-fit:cover;margin-inline-end:4px">` : "👤 "}<b>${esc(u.name)}</b>${u.username ? ` <span class="muted">@${esc(u.username)}</span>` : ""}</span>${u.contact ? ` · ${esc(u.contact)}` : ""}`;
+}
+async function openUser(uid){
+  const u = await userInfo(uid);
+  openModal(`<div style="text-align:center">${u.photo ? `<img src="${esc(u.photo)}" style="width:96px;height:96px;border-radius:50%;object-fit:cover">` : `<div style="font-size:60px">👤</div>`}
+    <h3 style="margin-top:10px">${esc(u.name)}</h3>${u.username ? `<div class="muted">@${esc(u.username)}</div>` : ""}</div>
+    <div class="kv"><b>الإيميل/الهاتف</b><span>${esc(u.contact || "—")}</span><b>المتابعون</b><span>${esc(u.followers || 0)}</span><b>سجّل</b><span>${fmtDate(u.createdAt)}</span><b>الحالة</b><span>${u.suspended ? "⛔ موقوف" : "✅ فعّال"}</span><b>UID</b><span style="word-break:break-all">${esc(uid)}</span></div>
+    <div class="actions"><button class="btn-gold" id="uL">🏠 إعلاناته</button><button class="btn-gold" id="uR">🎬 فيديوهاته</button><button id="uA">👤 إدارة الحساب</button><button id="uX">إغلاق</button></div>`);
+  $("#uL").onclick = () => { closeModal(); current="listings"; pageState={q:uid}; buildNav(); render(); };
+  $("#uR").onclick = () => { closeModal(); current="reels"; pageState={q:uid}; buildNav(); render(); };
+  $("#uA").onclick = () => { closeModal(); current="users"; pageState={q:uid}; buildNav(); render(); };
+  $("#uX").onclick = closeModal;
+}
+document.addEventListener("click", e => { const cv = e.target.closest?.("[data-cv]"); if (cv) { e.preventDefault(); openContent(cv.dataset.cv, cv.dataset.id); return; } const el = e.target.closest?.("[data-user]"); if (el) { e.preventDefault(); openUser(el.dataset.user); } });
+function techDetails(d){ return rawDetails(d).replace("كل التفاصيل", "بيانات تقنية (للمبرمج)"); }
+
+/* Full view of a listing or a reel with all moderation actions. */
+let hlsPlayer = null;
+const closeModalBase = closeModal;
+async function openContent(kind, id){
+  const s = await getDoc(doc(db, kind === "reel" ? "reels" : "listings", id));
+  if (!s.exists()) { toast("انحذف أو مش موجود", true); return; }
+  const r = {id: s.id, ...s.data()};
+  const ownerId = kind === "reel" ? r.userId : r.ownerId;
+  const owner = await userLabel(ownerId);
+  const w = r.adminWarning;
+  let media = "", info = "", hidden;
+  if (kind === "reel") {
+    hidden = r.moderationStatus && r.moderationStatus !== "approved";
+    const v = first(r, "videoUrl", "hlsUrl", "playbackUrl");
+    media = v ? `<video id="cVid" controls playsinline poster="${esc(first(r,"thumbnailUrl"))}"></video>` : (first(r,"thumbnailUrl") ? `<img src="${esc(first(r,"thumbnailUrl"))}">` : "");
+    info = `<b>الوصف</b><span>${esc(first(r,"caption","title","description") || "—")}</span>
+      <b>الصوت</b><span>${esc(first(r,"soundTitle") || "الصوت الأصلي")}</span>
+      <b>مين بيشوفه</b><span>${esc({everyone:"الكل",followers:"المتابعين",private:"هو فقط"}[r.whoCanWatch] || "الكل")}</span>
+      <b>الأرقام</b><span>👁 ${esc(first(r,"viewCount","viewsCount","views") || 0)} · ❤️ ${esc(first(r,"likeCount","likesCount") || 0)} · 💬 ${esc(first(r,"commentCount") || 0)} · 🔁 ${esc(first(r,"shareCount") || 0)}</span>
+      ${r.linkedListingTitle ? `<b>مربوط بإعلان</b><span>${esc(r.linkedListingTitle)}</span>` : ""}`;
+  } else {
+    hidden = r.status === "deleted" || r.status === "hidden";
+    const imgs = (Array.isArray(r.images) ? r.images : Array.isArray(r.imageUrls) ? r.imageUrls : [first(r,"imageUrl","coverImage","thumbnail")]).map(i => typeof i === "string" ? i : i?.url).filter(Boolean);
+    media = imgs.length ? `<div class="gallery">${imgs.map(u => `<img src="${esc(u)}" data-full="${esc(u)}">`).join("")}</div>` : `<div class="muted">ما في صور</div>`;
+    info = `<b>العنوان</b><span>${esc(first(r,"title","name") || "—")}</span>
+      <b>الوصف</b><span style="white-space:pre-wrap">${esc(first(r,"description","details") || "—")}</span>
+      <b>السعر</b><span>${money(first(r,"price"))} ${esc(first(r,"currency"))}</span>
+      <b>النوع</b><span>${esc(first(r,"listingType","category") || "—")}</span>
+      <b>المكان</b><span>${esc([first(r,"governorate"), first(r,"city"), first(r,"address")].filter(Boolean).join(" · ") || "—")}</span>
+      ${first(r,"phone","contactPhone") ? `<b>الهاتف</b><span>${esc(first(r,"phone","contactPhone"))}</span>` : ""}`;
   }
-  const u = await userCache.get(uid);
-  const name = first(u, "displayName", "fullName", "name", "username") || "بدون اسم";
-  const contact = first(u, "email", "phoneNumber", "phone");
-  return `<b>${esc(name)}</b>${contact ? ` · ${esc(contact)}` : ""} <span class="muted" style="font-size:12px">(${esc(uid.slice(0,8))}…)</span>`;
+  openModal(`<h3>${kind === "reel" ? "🎬 الفيديو" : "🏠 الإعلان"} ${hidden ? pill("hidden") : ""}</h3>${media}
+    <div class="kv"><b>صاحبه</b><span>${owner}</span>${info}<b>التاريخ</b><span>${fmtDate(r.createdAt)}</span></div>
+    ${w ? `<div class="warnbox">⚠️ <b>عليه تحذير:</b> ${esc(w.text || "")}<div class="muted" style="font-size:12px">${fmtDate(w.at)}</div></div>` : ""}
+    <div class="actions">
+      ${hidden ? `<button class="btn-ok" id="cShow">↩️ إظهار</button>` : `<button class="btn-bad" id="cHide">🙈 إخفاء</button>`}
+      <button class="btn-gold" id="cWarn">⚠️ ${w ? "تحذير جديد" : "تحذير لصاحبه"}</button>
+      ${w ? `<button id="cUnwarn">✖️ حذف التحذير</button>` : ""}
+      <button class="btn-bad" id="cDel">🗑 حذف نهائي</button>
+      <button id="cClose">إغلاق</button>
+    </div>${techDetails(r)}`);
+  const vid = document.getElementById("cVid");
+  if (vid) {
+    const src = first(r, "videoUrl", "hlsUrl", "playbackUrl");
+    if (/\.m3u8/i.test(src) && window.Hls && Hls.isSupported()) { hlsPlayer = new Hls(); hlsPlayer.loadSource(src); hlsPlayer.attachMedia(vid); }
+    else vid.src = src;
+    vid.onerror = () => { vid.insertAdjacentHTML("afterend", `<div class="muted">ما اشتغل الفيديو هون، <a href="${esc(src)}" target="_blank" rel="noopener">افتحه برابط مباشر</a></div>`); };
+  }
+  $("#modal").querySelectorAll("[data-full]").forEach(i => i.onclick = () => window.open(i.dataset.full, "_blank", "noopener"));
+  const col = kind === "reel" ? "reels" : "listings";
+  const done = async (msg) => { toast(msg); closeModal(); await render(); };
+  const run = async (btn, fn, msg) => { btn.disabled = true; try { await fn(); await done(msg); } catch(e){ console.error(e); toast(errMsg(e), true); btn.disabled = false; } };
+  $("#cClose").onclick = closeModal;
+  if ($("#cHide")) $("#cHide").onclick = e => run(e.target, () => updateDoc(doc(db,col,id), kind === "reel"
+      ? {moderationStatus:"hidden", moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}
+      : {statusBeforeAdmin: r.status || "active", status:"deleted", hiddenByAdmin:true, hiddenAt: serverTimestamp(), updatedAt: serverTimestamp()}), "انخفى ✅");
+  if ($("#cShow")) $("#cShow").onclick = e => run(e.target, () => updateDoc(doc(db,col,id), kind === "reel"
+      ? {moderationStatus:"approved", moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}
+      : {status: r.statusBeforeAdmin || "active", statusBeforeAdmin: deleteField(), hiddenByAdmin: deleteField(), updatedAt: serverTimestamp()}), "رجع ظاهر ✅");
+  $("#cWarn").onclick = async () => {
+    const text = await ask({title:"تحذير لصاحب " + (kind === "reel" ? "الفيديو" : "الإعلان"), text:"رح يوصله إشعار بالتطبيق فيه هالكلام.", input:"مثلاً: الصور مخالفة، عدّلها خلال يوم وإلا بينحذف", okText:"ابعت التحذير"});
+    if (text === null) return;
+    try { await call("adminModerateContent", {kind, id, action:"warn", text}); toast("انبعت التحذير ✅"); await render(); openContent(kind, id); } catch(e){ toast(errMsg(e), true); }
+  };
+  if ($("#cUnwarn")) $("#cUnwarn").onclick = async () => { try { await call("adminModerateContent", {kind, id, action:"unwarn"}); toast("انحذف التحذير ✅"); await render(); openContent(kind, id); } catch(e){ toast(errMsg(e), true); } };
+  $("#cDel").onclick = async (e) => {
+    if (!await ask({title:"حذف نهائي", text:"رح ينحذف للأبد وما بيرجع، وبيوصل لصاحبه إشعار. إذا بدك ترجّعه بعدين استعمل «إخفاء» بدالها.", danger:true, okText:"احذف للأبد"})) return;
+    try { await call("adminModerateContent", {kind, id, action:"delete"}); toast("انحذف ✅"); await render(); } catch(err){ toast(errMsg(err), true); }
+  };
 }
 async function fetchList(col, constraints=[], max=150){
   const snap = await getDocs(query(collection(db, col), ...constraints, limit(max)));
@@ -306,7 +417,7 @@ RENDER.topups = async () => {
         <button class="btn-sm" data-receipt="${esc(r.id)}">🧾 عرض الإيصال</button>
         ${r.status === "pending" ? `<button class="btn-sm btn-ok" data-approve="${esc(r.id)}" data-amount="${esc(r.amount)}">✅ موافقة وإضافة الرصيد</button>
         <button class="btn-sm btn-bad" data-reject="${esc(r.id)}">❌ رفض</button>` : ""}
-      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+      </div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   $("#view").querySelectorAll("[data-receipt]").forEach(b => b.onclick = async () => {
     b.disabled = true;
@@ -343,7 +454,7 @@ RENDER.deposits = async () => {
     return `<div class="item"><div class="head"><span class="title">عربون ${money(r.depositAmount)} ${esc(r.currency || "$")}</span>${pill(s)}</div>
       <div class="meta">المشتري: ${await userLabel(r.firstUserId)}<br>المالك: ${await userLabel(r.secondUserId)}<br>
       سعر الحجز: ${money(r.bookingPrice)} · رقم عملية شام كاش: <b>${esc(r.shamCashTransactionId || "—")}</b><br>آخر تحديث: ${fmtDate(first(r,"updatedAt","createdAt"))}</div>
-      <div class="actions">${r.receiptImageUrl ? `<a class="btn-sm" href="${esc(r.receiptImageUrl)}" target="_blank" rel="noopener"><button class="btn-sm">🧾 الإيصال</button></a>` : ""}${actions}</div>${rawDetails(r)}</div>`;
+      <div class="actions">${r.receiptImageUrl ? `<a class="btn-sm" href="${esc(r.receiptImageUrl)}" target="_blank" rel="noopener"><button class="btn-sm">🧾 الإيصال</button></a>` : ""}${actions}</div>${techDetails(r)}</div>`;
   }))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   $("#view").querySelectorAll("[data-dep]").forEach(b => b.onclick = async () => {
@@ -370,7 +481,7 @@ RENDER.withdrawals = async () => {
         ${r.status === "pending" ? `<button class="btn-sm btn-ok" data-w="approve" data-id="${esc(r.id)}">✅ موافقة</button>` : ""}
         ${r.status === "approved" ? `<button class="btn-sm btn-ok" data-w="paid" data-id="${esc(r.id)}">💵 تم الدفع</button>` : ""}
         ${["pending","approved"].includes(r.status) ? `<button class="btn-sm btn-bad" data-w="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}
-      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+      </div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   $("#view").querySelectorAll("[data-w]").forEach(b => b.onclick = async () => {
     const action = b.dataset.w; const data = {id: b.dataset.id, action};
@@ -393,7 +504,7 @@ RENDER.verify = async () => {
       <div class="actions"><button class="btn-sm" data-doc="${esc(r.id)}">🪪 عرض الوثيقة</button>
         ${r.status === "pending" ? `<button class="btn-sm btn-ok" data-v="approve" data-id="${esc(r.id)}">✅ توثيق</button><button class="btn-sm btn-bad" data-v="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}
         ${r.status === "approved" ? `<button class="btn-sm btn-bad" data-unv="${esc(r.userId)}">إلغاء التوثيق</button>` : ""}
-      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+      </div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   $("#view").querySelectorAll("[data-doc]").forEach(b => b.onclick = async () => {
     b.disabled = true;
@@ -422,7 +533,7 @@ RENDER.promos = async () => {
   html += `<div class="list">${(await Promise.all(rows.map(async r => `
     <div class="item"><div class="head"><span class="title">ترويج فيديو</span>${pill(r.status)}<span class="muted">${esc(first(r,"days","durationDays") ? first(r,"days","durationDays")+" يوم" : "")}</span></div>
       <div class="meta">صاحب الفيديو: ${await userLabel(r.ownerId)}<br>المبلغ: ${money(first(r,"budget","amount","price","totalPrice"))} · الفيديو: ${esc(r.reelId || "—")}<br>التاريخ: ${fmtDate(r.createdAt)}</div>
-      <div class="actions">${r.status === "pending" ? `<button class="btn-sm btn-ok" data-pr="approve" data-id="${esc(r.id)}">✅ موافقة</button><button class="btn-sm btn-bad" data-pr="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+      <div class="actions">${r.status === "pending" ? `<button class="btn-sm btn-ok" data-pr="approve" data-id="${esc(r.id)}">✅ موافقة</button><button class="btn-sm btn-bad" data-pr="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}</div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   $("#view").querySelectorAll("[data-pr]").forEach(b => b.onclick = async () => {
     const data = {promotionId: b.dataset.id, action: b.dataset.pr};
@@ -444,7 +555,7 @@ RENDER.businesses = async () => {
         ${r.status !== "approved" ? `<button class="btn-sm btn-ok" data-bz="approve" data-id="${esc(r.id)}">✅ موافقة</button>` : ""}
         ${r.status === "pending" ? `<button class="btn-sm" data-bz="request_changes" data-id="${esc(r.id)}">✏️ طلب تعديل</button><button class="btn-sm btn-bad" data-bz="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}
         ${r.status === "approved" ? `<button class="btn-sm btn-bad" data-bz="suspend" data-id="${esc(r.id)}">⛔ إيقاف</button>` : ""}
-      </div>${rawDetails(r)}</div>`))).join("")}</div>`;
+      </div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   $("#view").querySelectorAll("[data-bz]").forEach(b => b.onclick = async () => {
     const data = {businessId: b.dataset.id, action: b.dataset.bz};
@@ -465,7 +576,7 @@ RENDER.reports = async () => {
     <div class="item"><div class="head"><span class="title">${esc(first(r,"reason","category","type") || "بلاغ")}</span>${pill(r.status || "open")}<span class="muted">${esc(first(r,"targetType","contentType"))}</span></div>
       <div class="meta">المُبلِّغ: ${await userLabel(first(r,"reporterId","uid"))}<br>المُبلَّغ عنه: ${first(r,"reportedUserId","targetUserId","hostId") ? await userLabel(first(r,"reportedUserId","targetUserId","hostId")) : esc(first(r,"targetId","reelId","listingId","roomId") || "—")}<br>
       ${esc(first(r,"details","description","message","note")).slice(0,300)}<br>التاريخ: ${fmtDate(first(r,"createdAt","updatedAt"))}</div>
-      <div class="actions">${(r.status || "open") !== "resolved" ? `<button class="btn-sm btn-ok" data-rp="${esc(r.id)}">✅ تمت المعالجة</button>` : ""}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+      <div class="actions">${(r.status || "open") !== "resolved" ? `<button class="btn-sm btn-ok" data-rp="${esc(r.id)}">✅ تمت المعالجة</button>` : ""}</div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   $("#view").querySelectorAll("[data-rp]").forEach(b => b.onclick = () => act(b, () =>
     updateDoc(doc(db, f === "user" ? "user_reports" : "live_reports", b.dataset.rp), f === "user" ? {status:"resolved", resolvedAt: serverTimestamp(), resolvedBy: auth.currentUser.uid} : {status:"resolved"})));
@@ -483,10 +594,11 @@ RENDER.listings = async () => {
   html += `<div class="list">${(await Promise.all(rows.map(async r => {
     const img = Array.isArray(r.images) ? r.images[0] : first(r,"imageUrl","coverImage","thumbnail");
     const hidden = r.status === "deleted" || r.status === "hidden";
-    return `<div class="item"><div class="head">${img ? `<img class="thumb" src="${esc(typeof img === "string" ? img : img?.url)}">` : ""}<div><div class="title">${esc(first(r,"title","name") || "بدون عنوان")}</div>
+    return `<div class="item"><div class="head">${img ? `<img class="thumb" data-cv="listing" data-id="${esc(r.id)}" src="${esc(typeof img === "string" ? img : img?.url)}">` : ""}<div><div class="title">${esc(first(r,"title","name") || "بدون عنوان")}</div>
       <div class="muted" style="font-size:13px">${esc(first(r,"listingType","category"))} · ${money(first(r,"price"))} ${esc(first(r,"currency"))}</div></div>${pill(r.status || "active")}</div>
       <div class="meta">المالك: ${await userLabel(r.ownerId)}<br>${esc(first(r,"city","address","governorate"))} · ${fmtDate(r.createdAt)} · رقم: ${esc(r.id)}</div>
-      <div class="actions">${hidden ? `<button class="btn-sm btn-ok" data-ls="restore" data-id="${esc(r.id)}" data-prev="${esc(r.statusBeforeAdmin || "")}">↩️ إرجاع الإعلان</button>` : `<button class="btn-sm btn-bad" data-ls="hide" data-id="${esc(r.id)}" data-cur="${esc(r.status || "")}">🙈 إخفاء/حذف الإعلان</button>`}</div>${rawDetails(r)}</div>`;
+      ${r.adminWarning ? `<div class="warnbox" style="margin:6px 0">⚠️ عليه تحذير: ${esc(r.adminWarning.text || "")}</div>` : ""}
+      <div class="actions"><button class="btn-sm btn-gold" data-cv="listing" data-id="${esc(r.id)}">👁 عرض الإعلان</button>${hidden ? `<button class="btn-sm btn-ok" data-ls="restore" data-id="${esc(r.id)}" data-prev="${esc(r.statusBeforeAdmin || "")}">↩️ إرجاع الإعلان</button>` : `<button class="btn-sm btn-bad" data-ls="hide" data-id="${esc(r.id)}" data-cur="${esc(r.status || "")}">🙈 إخفاء الإعلان</button>`}</div></div>`;
   }))).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
@@ -514,10 +626,11 @@ RENDER.reels = async () => {
   html += `<div class="list">${(await Promise.all(rows.map(async r => {
     const thumb = first(r,"thumbnailUrl","thumbnail","coverUrl");
     const hidden = r.moderationStatus && r.moderationStatus !== "approved";
-    return `<div class="item"><div class="head">${thumb ? `<img class="thumb" src="${esc(thumb)}">` : ""}<div><div class="title">${esc(first(r,"caption","title","description") || "فيديو").slice(0,90)}</div>
-      <div class="muted" style="font-size:13px">👁 ${esc(first(r,"viewsCount","views") || 0)} · ❤️ ${esc(first(r,"likesCount","likes") || 0)}</div></div>${pill(r.moderationStatus || "")}${pill(r.uploadStatus || "")}</div>
+    return `<div class="item"><div class="head">${thumb ? `<img class="thumb" data-cv="reel" data-id="${esc(r.id)}" src="${esc(thumb)}">` : ""}<div><div class="title">${esc(first(r,"caption","title","description") || "فيديو").slice(0,90)}</div>
+      <div class="muted" style="font-size:13px">👁 ${esc(first(r,"viewCount","viewsCount","views") || 0)} · ❤️ ${esc(first(r,"likeCount","likesCount","likes") || 0)}</div></div>${pill(r.moderationStatus || "")}${pill(r.uploadStatus || "")}</div>
       <div class="meta">صاحب الفيديو: ${await userLabel(r.userId)}<br>${fmtDate(r.createdAt)} · رقم: ${esc(r.id)}</div>
-      <div class="actions">${hidden ? `<button class="btn-sm btn-ok" data-rl="approved" data-id="${esc(r.id)}">↩️ إظهار الفيديو</button>` : `<button class="btn-sm btn-bad" data-rl="hidden" data-id="${esc(r.id)}">🙈 إخفاء الفيديو</button>`}</div>${rawDetails(r)}</div>`;
+      ${r.adminWarning ? `<div class="warnbox" style="margin:6px 0">⚠️ عليه تحذير: ${esc(r.adminWarning.text || "")}</div>` : ""}
+      <div class="actions"><button class="btn-sm btn-gold" data-cv="reel" data-id="${esc(r.id)}">▶️ شوف الفيديو</button>${hidden ? `<button class="btn-sm btn-ok" data-rl="approved" data-id="${esc(r.id)}">↩️ إظهار الفيديو</button>` : `<button class="btn-sm btn-bad" data-rl="hidden" data-id="${esc(r.id)}">🙈 إخفاء الفيديو</button>`}</div></div>`;
   }))).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
@@ -543,7 +656,7 @@ RENDER.live = async () => {
   if (!rows.length) html += emptyBox("ما في حدا عم يبث هلّق");
   html += `<div class="list">${(await Promise.all(rows.map(async r => `<div class="item"><div class="head">${r.photoUrl ? `<img class="thumb" src="${esc(r.photoUrl)}">` : ""}<div><div class="title">${esc(r.title || "بث مباشر")}</div>
     <div class="muted" style="font-size:13px">👁 ${esc(r.viewerCount || 0)} مشاهد</div></div>${pill("live")}</div>
-    <div class="meta">صاحب البث: ${await userLabel(r.ownerId)}<br>بدأ: ${fmtDate(first(r,"startedAt","createdAt"))} · رقم: ${esc(r.id)}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+    <div class="meta">صاحب البث: ${await userLabel(r.ownerId)}<br>بدأ: ${fmtDate(first(r,"startedAt","createdAt"))} · رقم: ${esc(r.id)}</div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#liveToggle").onclick = async (e) => {
     const on = e.target.dataset.v === "1";
@@ -562,7 +675,7 @@ RENDER.sounds = async () => {
     <div class="muted" style="font-size:13px">🎬 ${esc(r.usageCount || 0)} فيديو ${r.isOriginal ? "· صوت أصلي من فيديو" : ""}</div></div></div>
     <audio controls preload="none" src="${esc(r.audioUrl)}" style="width:100%;margin:8px 0"></audio>
     <div class="meta">صاحب الصوت: ${await userLabel(r.ownerId)}<br>${fmtDate(r.createdAt)} · رقم: ${esc(r.id)}</div>
-    <div class="actions">${showRemoved ? `<button class="btn-sm btn-ok" data-snd="active" data-id="${esc(r.id)}">↩️ إرجاع الصوت</button>` : `<button class="btn-sm btn-bad" data-snd="removed" data-id="${esc(r.id)}">🗑 حذف الصوت (حقوق أو مخالفة)</button>`}</div>${rawDetails(r)}</div>`))).join("")}</div>`;
+    <div class="actions">${showRemoved ? `<button class="btn-sm btn-ok" data-snd="active" data-id="${esc(r.id)}">↩️ إرجاع الصوت</button>` : `<button class="btn-sm btn-bad" data-snd="removed" data-id="${esc(r.id)}">🗑 حذف الصوت (حقوق أو مخالفة)</button>`}</div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#tg").onclick = () => { pageState.removed = !showRemoved; render(); };
   $("#view").querySelectorAll("[data-snd]").forEach(b => b.onclick = async () => {
@@ -878,7 +991,7 @@ RENDER.pins = async () => {
   if (!rows.length) html += emptyBox();
   html += `<div class="list">${(await Promise.all(rows.map(async p => `<div class="item"><div class="head"><span class="title">📍 ${p.targetType === "business" ? "محل" : "إعلان"} · ${esc(p.days)} يوم · ${money(p.priceUsd)} $</span>${pill(p.status === "cancelled" ? "cancelled" : p.active ? "active" : "ended")}</div>
     <div class="meta">صاحبه: ${await userLabel(p.ownerId)}<br>من: ${fmtDate(p.createdAt)} · لحد: ${fmtDate(p.pinnedUntil)}<br>رقم ${p.targetType === "business" ? "المحل" : "الإعلان"}: ${esc(p.targetId)}${p.refunded ? " · تم إرجاع المبلغ" : ""}</div>
-    <div class="actions">${p.active ? `<button class="btn-sm btn-bad" data-cp="${esc(p.id)}">⛔ إلغاء التثبيت</button><button class="btn-sm" data-cpr="${esc(p.id)}">↩️ إلغاء مع إرجاع المبلغ</button>` : ""}</div>${rawDetails(p)}</div>`))).join("")}</div>`;
+    <div class="actions">${p.active ? `<button class="btn-sm btn-bad" data-cp="${esc(p.id)}">⛔ إلغاء التثبيت</button><button class="btn-sm" data-cpr="${esc(p.id)}">↩️ إلغاء مع إرجاع المبلغ</button>` : ""}</div>${techDetails(p)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
   const cancel = async (b, refund) => {
     if (!await ask({title:"إلغاء التثبيت", text: refund ? "رح يرجع المبلغ لمحفظة صاحب الإعلان." : "التثبيت رح يوقف بدون إرجاع المبلغ.", danger:true, okText:"إلغاء التثبيت"})) return;
@@ -951,7 +1064,7 @@ RENDER.users = async () => {
       <div class="actions">${suspended ? `<button class="btn-sm btn-ok" data-us="active" data-id="${esc(u.id)}">✅ فك الإيقاف</button>` : `<button class="btn-sm btn-bad" data-us="suspended" data-id="${esc(u.id)}">⛔ إيقاف الحساب</button>`}
       <button class="btn-sm btn-gold" data-bal="${esc(u.id)}" data-cur="${esc(u.walletBalanceUsd || 0)}">💰 تعديل الرصيد</button>
       <button class="btn-sm" data-hist="${esc(u.id)}">📜 سجل الرصيد</button>
-      <button class="btn-sm" data-ul="${esc(u.id)}">🏠 إعلاناته</button><button class="btn-sm" data-ur="${esc(u.id)}">🎬 فيديوهاته</button></div>${rawDetails(u)}</div>`;
+      <button class="btn-sm" data-ul="${esc(u.id)}">🏠 إعلاناته</button><button class="btn-sm" data-ur="${esc(u.id)}">🎬 فيديوهاته</button></div>${techDetails(u)}</div>`;
   }).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
