@@ -652,12 +652,28 @@ RENDER.live = async () => {
   let html = `<div class="item"><div class="head"><div><div class="title">حالة البث المباشر بالتطبيق</div>
     <div class="muted" style="font-size:13px">${enabled ? "✅ البث شغّال — المستخدمين بيقدروا يبثوا" : "⛔ البث مسكّر — ما حدا بيقدر يبدأ بث"}</div></div></div>
     <div class="actions">${enabled ? `<button class="btn-sm btn-bad" id="liveToggle" data-v="0">إيقاف البث المباشر</button>` : `<button class="btn-sm btn-ok" id="liveToggle" data-v="1">تشغيل البث المباشر</button>`}</div></div>
+    <div class="item" style="margin-top:12px"><div class="head"><div><div class="title">💰 نسبتنا من الهدايا</div>
+      <div class="muted" style="font-size:13px">من كل هدية بتوصل لحدا، منقص نسبتنا والباقي بينزل لحاله عنده «متاح للسحب». المستخدم ما بيشوف النسبة، بيشوف بس المبلغ اللي إله.</div></div></div>
+      <div class="row" style="margin-top:8px;align-items:center;gap:8px;flex-wrap:wrap">
+        <label>نسبتنا</label><input id="feePct" type="number" min="0" max="100" step="1" style="width:90px" value="${esc(100 - Math.round((Number.isInteger(cfg.creatorShareBps) ? cfg.creatorShareBps : 5000) / 100))}"><span>%</span>
+        <button class="btn-sm btn-gold" id="feeSave">حفظ</button>
+        <span class="muted" id="feeEx" style="font-size:13px"></span>
+      </div></div>
     <h3 style="margin:18px 0 8px">عم يبثوا هلّق (${rows.length})</h3>`;
   if (!rows.length) html += emptyBox("ما في حدا عم يبث هلّق");
   html += `<div class="list">${(await Promise.all(rows.map(async r => `<div class="item"><div class="head">${r.photoUrl ? `<img class="thumb" src="${esc(r.photoUrl)}">` : ""}<div><div class="title">${esc(r.title || "بث مباشر")}</div>
     <div class="muted" style="font-size:13px">👁 ${esc(r.viewerCount || 0)} مشاهد</div></div>${pill("live")}</div>
     <div class="meta">صاحب البث: ${await userLabel(r.ownerId)}<br>بدأ: ${fmtDate(first(r,"startedAt","createdAt"))} · رقم: ${esc(r.id)}</div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html;
+  const centsPerPoint = Number.isInteger(cfg.creatorValueCentsPerPoint) ? cfg.creatorValueCentsPerPoint : 1;
+  const feeExample = () => { const p = Math.min(100, Math.max(0, Number($("#feePct").value) || 0)); const gross = 1000 * centsPerPoint / 100; $("#feeEx").textContent = `مثال: هدايا بقيمة 1000 نقطة = ${money(gross)}$ → صاحب البث بياخد ${money(gross * (100 - p) / 100)}$ ونحنا ${money(gross * p / 100)}$`; };
+  $("#feePct").oninput = feeExample; feeExample();
+  $("#feeSave").onclick = async (e) => {
+    const p = Number($("#feePct").value);
+    if (!Number.isFinite(p) || p < 0 || p > 100) { toast("اكتب رقم بين 0 و 100", true); return; }
+    if (!await ask({title:"تغيير النسبة", text:`نسبتنا رح تصير ${Math.round(p)}% وصاحب البث بياخد ${100 - Math.round(p)}% من الهدايا الجاية (الهدايا القديمة ما بتتغيّر).`, okText:"حفظ"})) return;
+    act(e.target, () => setDoc(doc(db,"live_config","settings"), {creatorShareBps: (100 - Math.round(p)) * 100, updatedAt: serverTimestamp(), updatedBy: auth.currentUser.uid}, {merge:true}), "انحفظت النسبة ✅");
+  };
   $("#liveToggle").onclick = async (e) => {
     const on = e.target.dataset.v === "1";
     if (!on && !await ask({title:"إيقاف البث المباشر", text:"ما حدا رح يقدر يبدأ بث جديد لحتى ترجع تشغّله.", danger:true, okText:"إيقاف"})) return;
