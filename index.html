@@ -630,12 +630,16 @@ RENDER.reels = async () => {
       <div class="muted" style="font-size:13px">👁 ${esc(first(r,"viewCount","viewsCount","views") || 0)} · ❤️ ${esc(first(r,"likeCount","likesCount","likes") || 0)}</div></div>${pill(r.moderationStatus || "")}${pill(r.uploadStatus || "")}</div>
       <div class="meta">صاحب الفيديو: ${await userLabel(r.userId)}<br>${fmtDate(r.createdAt)} · رقم: ${esc(r.id)}</div>
       ${r.adminWarning ? `<div class="warnbox" style="margin:6px 0">⚠️ عليه تحذير: ${esc(r.adminWarning.text || "")}</div>` : ""}
-      <div class="actions"><button class="btn-sm btn-gold" data-cv="reel" data-id="${esc(r.id)}">▶️ شوف الفيديو</button>${hidden ? `<button class="btn-sm btn-ok" data-rl="approved" data-id="${esc(r.id)}">↩️ إظهار الفيديو</button>` : `<button class="btn-sm btn-bad" data-rl="hidden" data-id="${esc(r.id)}">🙈 إخفاء الفيديو</button>`}</div></div>`;
+      <div class="actions"><button class="btn-sm btn-gold" data-cv="reel" data-id="${esc(r.id)}">▶️ شوف الفيديو</button>${r.uploadStatus && r.uploadStatus !== "ready" ? `<button class="btn-sm" data-rrs="${esc(r.id)}">🔄 تحديث حالة الرفع</button>` : ""}${hidden ? `<button class="btn-sm btn-ok" data-rl="approved" data-id="${esc(r.id)}">↩️ إظهار الفيديو</button>` : `<button class="btn-sm btn-bad" data-rl="hidden" data-id="${esc(r.id)}">🙈 إخفاء الفيديو</button>`}</div></div>`;
   }))).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#qb").onclick = () => { pageState.q = $("#q").value; render(); };
   $("#q").onkeydown = e => { if (e.key === "Enter") $("#qb").click(); };
   if ($("#qc")) $("#qc").onclick = () => { pageState.q = ""; render(); };
+  $("#view").querySelectorAll("[data-rrs]").forEach(b => b.onclick = () => act(b, async () => {
+    const st = await call("refreshReelStatus", {reelId: b.dataset.rrs});
+    toast("حالة الفيديو عند Bunny: " + ({0:"انعمل",1:"انرفع",2:"عم يتجهّز",3:"عم يتحوّل",4:"جاهز",5:"خطأ",6:"فشل الرفع"}[st?.bunnyStatus] ?? st?.bunnyStatus));
+  }, "تحدّث ✅"));
   $("#view").querySelectorAll("[data-rl]").forEach(b => b.onclick = async () => {
     if (b.dataset.rl === "hidden" && !await ask({title:"إخفاء الفيديو", text:"الفيديو رح يختفي من التطبيق (بتقدر ترجّعه بعدين).", danger:true, okText:"إخفاء"})) return;
     act(b, () => updateDoc(doc(db,"reels",b.dataset.id), {moderationStatus: b.dataset.rl, moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}));
