@@ -326,6 +326,7 @@ const byNewest = (...keys) => (a,b) => ts(first(b, ...keys)) - ts(first(a, ...ke
 /* ---------- pages ---------- */
 const PAGES = {
   home:        {title:"الرئيسية", icon:"📊"},
+  finance:     {title:"المالية", icon:"💵"},
   topups:      {title:"شحن الرصيد", icon:"💰", badge:()=>countOf("wallet_top_up_requests", where("status","==","pending"))},
   deposits:    {title:"العربون", icon:"🤝", badge:()=>countOf("deposit_transactions", where("status","in",["payment_under_review","release_requested","disputed"]))},
   withdrawals: {title:"سحب أرباح البث", icon:"💸", badge:()=>countOf("live_withdrawals", where("status","in",["pending","approved"]))},
@@ -1042,10 +1043,70 @@ RENDER.referrals = async () => {
 };
 
 /* ---- Google Play purchases ---- */
+RENDER.finance = async () => {
+  const days = pageState.days ?? 30;
+  const d = await admin("finance", {days});
+  const periods = [[7,"آخر أسبوع"],[30,"آخر شهر"],[90,"آخر 3 شهور"],[365,"آخر سنة"],[0,"من الأول"]];
+  const card = (label, value, sub="", color="") => `<div class="stat" style="cursor:default"><div class="l">${label}</div><div class="n" ${color?`style="color:${color}"`:""}>${money(value)} $</div>${sub?`<div class="muted" style="font-size:12px;margin-top:4px">${sub}</div>`:""}</div>`;
+  const max = Math.max(1, ...d.months.map(m => m.play + m.manual), ...d.months.map(m => m.payouts));
+  const bars = d.months.map(m => {
+    const inH = Math.round((m.play + m.manual) / max * 120), outH = Math.round(m.payouts / max * 120);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:46px">
+      <div style="display:flex;align-items:flex-end;gap:3px;height:124px">
+        <div title="دخل ${money(m.play + m.manual)}$" style="width:14px;height:${inH}px;background:var(--gold);border-radius:4px 4px 0 0"></div>
+        <div title="مدفوع ${money(m.payouts)}$" style="width:14px;height:${outH}px;background:#e0605e;border-radius:4px 4px 0 0"></div>
+      </div><div class="muted" style="font-size:11px">${esc(m.month.slice(5))}/${esc(m.month.slice(2,4))}</div></div>`;
+  }).join("");
+  let html = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">${periods.map(([v,l]) => `<button class="btn-sm ${v===days?"btn-gold":""}" data-days="${v}">${l}</button>`).join("")}
+      <span style="flex:1"></span><button class="btn-sm" id="finCsv">⬇️ تنزيل إكسل (CSV)</button></div>
+    <h3 style="margin:6px 0 8px">💰 الصافي</h3>
+    <div class="cards" style="margin-bottom:14px">
+      ${card("الداخل (بعد عمولة جوجل)", d.cashIn, "شحن جوجل بلاي + الشحن اليدوي")}
+      ${card("الطالع (دفعنا لأصحاب البث)", d.creators.paidOut, d.creators.paidCount + " دفعة", "#e0605e")}
+      ${card("الصافي إلنا", d.net, "الداخل − الطالع", d.net >= 0 ? "#3fbf7f" : "#e0605e")}
+    </div>
+    <h3 style="margin:6px 0 8px">🛒 جوجل بلاي</h3>
+    <div class="cards" style="margin-bottom:14px">
+      ${card("المبيعات", d.play.gross, d.play.count + " عملية شراء")}
+      ${card("عمولة جوجل (15%)", d.play.googleFee, "", "#e0605e")}
+      ${card("إلنا من جوجل", d.play.net)}
+      ${card("منها شحن رصيد", d.play.wallet)}
+      ${card("منها نقاط هدايا", d.play.points)}
+    </div>
+    <h3 style="margin:6px 0 8px">🏦 الشحن اليدوي والإعلانات</h3>
+    <div class="cards" style="margin-bottom:14px">
+      ${card("شحن يدوي مقبول", d.manual.total, d.manual.count + " طلب")}
+      ${card("شحن يدوي ناطر موافقتك", d.manual.pending, "", d.manual.pending ? "var(--warn)" : "")}
+      ${card("انصرف على الإعلانات", d.ads.total, `ترويج فيديو ${money(d.ads.reels)}$ (${d.ads.reelsCount}) · تثبيت خريطة ${money(d.ads.pins)}$ (${d.ads.pinsCount})`)}
+    </div>
+    <h3 style="margin:6px 0 8px">🎁 أصحاب البث</h3>
+    <div class="cards" style="margin-bottom:14px">
+      ${card("طلبات سحب ناطرة", d.creators.waiting, d.creators.waitingCount + " طلب", d.creators.waiting ? "var(--warn)" : "")}
+      ${card("رصيدهم المتاح للسحب هلّق", d.creators.availableNow, "مبلغ ممكن يطلبوه بأي وقت")}
+      ${card("كل أرباحهم من الأول", d.creators.earnedAllTime)}
+    </div>
+    <h3 style="margin:6px 0 8px">📈 آخر 12 شهر</h3>
+    ${d.months.length ? `<div class="item" style="overflow-x:auto"><div style="display:flex;gap:10px;align-items:flex-end;direction:ltr">${bars}</div>
+      <div class="muted" style="font-size:12px;margin-top:8px"><span style="color:var(--gold)">■</span> الداخل &nbsp; <span style="color:#e0605e">■</span> المدفوع لأصحاب البث</div></div>` : emptyBox("ما في حركات بهالفترة")}
+    <p class="muted" style="font-size:12px">الأرقام تقديرية (عمولة جوجل محسوبة 15%، والسعر حسب الأسعار المقترحة). الرقم الرسمي بيطلع بـ Google Play Console ← التقارير المالية.</p>`;
+  $("#view").innerHTML = html;
+  $("#view").querySelectorAll("[data-days]").forEach(b => b.onclick = () => { pageState.days = Number(b.dataset.days); render(); });
+  $("#finCsv").onclick = () => {
+    const rows = [["البند","المبلغ $"],["مبيعات جوجل بلاي",d.play.gross],["عمولة جوجل",d.play.googleFee],["صافي جوجل بلاي",d.play.net],
+      ["شحن يدوي مقبول",d.manual.total],["الداخل",d.cashIn],["مدفوع لأصحاب البث",d.creators.paidOut],["الصافي",d.net],
+      ["انصرف على الإعلانات",d.ads.total],["طلبات سحب ناطرة",d.creators.waiting],["رصيد أصحاب البث المتاح",d.creators.availableNow],[],
+      ["الشهر","جوجل بلاي","شحن يدوي","إعلانات","مدفوع لأصحاب البث"], ...d.months.map(m => [m.month,m.play,m.manual,m.ads,m.payouts])];
+    const csv = "﻿" + rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    a.download = `alami-finance-${days || "all"}d.csv`; a.click();
+  };
+};
+
 RENDER.play = async () => {
   const data = await admin("playPurchases");
   const NAMES = {gift_points_100:"100 نقطة", gift_points_550:"550 نقطة", gift_points_1150:"1150 نقطة", gift_points_3000:"3000 نقطة", gift_points_6500:"6500 نقطة",
-    wallet_credit_5:"رصيد 5$", wallet_credit_10:"رصيد 10$", wallet_credit_25:"رصيد 25$", wallet_credit_50:"رصيد 50$", wallet_credit_100:"رصيد 100$"};
+    wallet_credit_1:"رصيد 1$", wallet_credit_3:"رصيد 3$", wallet_credit_5:"رصيد 5$", wallet_credit_7:"رصيد 7$", wallet_credit_10:"رصيد 10$", wallet_credit_25:"رصيد 25$", wallet_credit_50:"رصيد 50$", wallet_credit_100:"رصيد 100$"};
   let html = `<div class="cards" style="margin-bottom:14px"><div class="stat"><div class="l">عدد المشتريات (آخر 200)</div><div class="n">${data.purchases.length}</div></div>
     <div class="stat"><div class="l">المبلغ التقريبي</div><div class="n">${money(data.grossUsd)} $</div></div>
     <div class="stat"><div class="l">إلك بعد عمولة جوجل (تقريباً 85%)</div><div class="n">${money(data.netUsdEstimate)} $</div></div></div>
