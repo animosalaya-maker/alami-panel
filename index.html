@@ -986,13 +986,37 @@ RENDER.buses = async () => {
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, attribution: "© OpenStreetMap"}).addTo(map);
     const bounds = [];
     const layers = {};
+    // OSM gives a line as separate road pieces, not always in order: split where it jumps (>250 m)
+    // and chain pieces by their nearest ends, so no fake straight lines cross the buildings.
+    const dist = (a, b) => { const R = 6371000, t = Math.PI / 180, dLa = (b[0]-a[0])*t, dLo = (b[1]-a[1])*t;
+      const h = Math.sin(dLa/2)**2 + Math.cos(a[0]*t)*Math.cos(b[0]*t)*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.min(1, Math.sqrt(h))); };
+    const pieces = (path) => {
+      const out = []; let cur = [path[0]];
+      for (let i = 1; i < path.length; i++) { if (dist(path[i-1], path[i]) > 250) { if (cur.length > 1) out.push(cur); cur = []; } cur.push(path[i]); }
+      if (cur.length > 1) out.push(cur);
+      const left = out.slice(), groups = [];
+      while (left.length) {
+        let chain = left.shift(), grew = true;
+        while (grew && left.length) {
+          grew = false; let best = -1, bestD = 150, mode = 0;
+          left.forEach((p, j) => { [dist(chain.at(-1), p[0]), dist(chain.at(-1), p.at(-1)), dist(chain[0], p.at(-1)), dist(chain[0], p[0])]
+            .forEach((d, m) => { if (d < bestD) { bestD = d; best = j; mode = m; } }); });
+          if (best >= 0) { const p = left.splice(best, 1)[0];
+            chain = mode === 0 ? chain.concat(p) : mode === 1 ? chain.concat(p.slice().reverse()) : mode === 2 ? p.concat(chain) : p.slice().reverse().concat(chain);
+            grew = true; }
+        }
+        groups.push(chain);
+      }
+      return groups;
+    };
     for (const l of lines) {
-      const pts = decodePoly(l.pathEnc);
-      if (pts.length < 2) continue;
+      const raw = decodePoly(l.pathEnc);
+      if (raw.length < 2) continue;
+      const pts = pieces(raw);
       const line = L.polyline(pts, {color: "#" + (l.color || "E0B050"), weight: 5, opacity: l.active === false ? 0.35 : 0.9})
         .bindPopup(`<b>${esc(l.nameAr || l.name || l.id)}</b><br>${esc(l.city || "")} · ${(l.stops || []).length} موقف`).addTo(map);
       layers[l.id] = line;
-      bounds.push(...pts);
+      bounds.push(...raw);
     }
     const busLayer = L.layerGroup().addTo(map);
     const drawLive = (rows) => {
