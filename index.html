@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
+<meta http-equiv="refresh" content="0; url=https://prob-map-services-admin.web.app/alami/">
+<script>location.replace("https://prob-map-services-admin.web.app/alami/" + location.hash);</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
@@ -116,6 +118,8 @@
 <script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
 <style>
   .nav-group{font-size:12px;font-weight:800;color:var(--gold, #D9AE32);margin:14px 10px 4px;opacity:.9}
+  .map-full{position:fixed!important;inset:0!important;height:100vh!important;margin:0!important;border-radius:0!important;z-index:9000}
+  .map-full-btn{position:fixed;top:14px;left:14px;z-index:9001;background:#fff!important;color:#111!important;box-shadow:0 2px 10px #0004}
   .svc-frame{width:100%;height:calc(100vh - 120px);border:0;border-radius:14px;background:#fff}
 </style>
 </head>
@@ -958,7 +962,8 @@ RENDER.buses = async () => {
     </div>
     <p class="muted">عدد الخطوط: ${lines.length} · ركّاب عم يشاركوا هلق: ${Object.values(liveBy).reduce((a,b)=>a+b,0)}</p>`;
   // Live map (owner 2026-11-20): every line drawn on its real route, buses shared by riders live on it.
-  html += `<div id="busMap" style="height:440px;border-radius:14px;overflow:hidden;margin:6px 0 14px;border:1px solid var(--line)"></div>`;
+  html += `<div style="display:flex;justify-content:flex-end;margin:6px 0"><button class="btn-sm" id="busFull">⛶ الخريطة شاشة كاملة</button></div>
+    <div id="busMap" style="height:440px;border-radius:14px;overflow:hidden;margin:0 0 14px;border:1px solid var(--line)"></div>`;
   if (!lines.length) html += emptyBox("ما في خطوط لسّا. اختار مدينة واكبس «سحب الخطوط».");
   html += `<div class="list">${lines.map(l => `<div class="item"><div class="head">
       <span style="display:inline-block;width:14px;height:14px;border-radius:4px;background:#${esc(l.color || "999")}"></span>
@@ -1030,6 +1035,16 @@ RENDER.buses = async () => {
     };
     drawLive(live);
     if (bounds.length) map.fitBounds(bounds, {padding: [20, 20]});
+    // Full screen map (owner 2026-11-21): the whole window, Esc or the button to go back.
+    const full = $("#busFull"), box = $("#busMap");
+    const setFull = on => {
+      box.classList.toggle("map-full", on);
+      full.classList.toggle("map-full-btn", on);
+      full.textContent = on ? "✕ رجوع" : "⛶ الخريطة شاشة كاملة";
+      setTimeout(() => map.invalidateSize(), 60);
+    };
+    full.onclick = () => setFull(!box.classList.contains("map-full"));
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && box.classList.contains("map-full")) setFull(false); });
     $("#view").querySelectorAll("[data-bmap]").forEach(btn => btn.onclick = () => {
       const ly = layers[btn.dataset.bmap]; if (!ly) return toast("ما في مسار مرسوم لهالخط");
       map.fitBounds(ly.getBounds(), {padding: [30, 30]}); ly.openPopup();
