@@ -108,6 +108,16 @@
     .menu-btn{display:inline-block}
   }
 </style>
+<style>
+  /* Inside the unified admin panel: its own menu is hidden (the outer panel has the menu). */
+  html.embed .side, html.embed .menu-btn, html.embed .me { display:none !important }
+  html.embed main { margin-right:0 !important }
+</style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
+<style>
+  .nav-group{font-size:12px;font-weight:800;color:var(--gold, #D9AE32);margin:14px 10px 4px;opacity:.9}
+  .svc-frame{width:100%;height:calc(100vh - 120px);border:0;border-radius:14px;background:#fff}
+</style>
 </head>
 <body>
 
@@ -141,12 +151,15 @@
 <div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
 <div id="toast"></div>
 
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, setDoc, serverTimestamp, getCountFromServer, deleteField, writeBatch, deleteDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { getStorage, ref as sref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 const app = initializeApp({
   apiKey: "AIzaSyDYrtyHAD2IcQLur05yUahn2mWdAi7BJvg",
@@ -159,6 +172,7 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const fns = getFunctions(app, "us-central1");
+const storage = getStorage(app);
 const call = (name, data) => httpsCallable(fns, name)(data).then(r => r.data);
 
 /* ---------- helpers ---------- */
@@ -325,48 +339,90 @@ const byNewest = (...keys) => (a,b) => ts(first(b, ...keys)) - ts(first(a, ...ke
 
 /* ---------- pages ---------- */
 const PAGES = {
-  home:        {title:"الرئيسية", icon:"📊"},
-  finance:     {title:"المالية", icon:"💵"},
-  topups:      {title:"شحن الرصيد", icon:"💰", badge:()=>countOf("wallet_top_up_requests", where("status","==","pending"))},
-  deposits:    {title:"العربون", icon:"🤝", badge:()=>countOf("deposit_transactions", where("status","in",["payment_under_review","release_requested","disputed"]))},
-  withdrawals: {title:"سحب أرباح البث", icon:"💸", badge:()=>countOf("live_withdrawals", where("status","in",["pending","approved"]))},
-  verify:      {title:"التوثيق", icon:"🪪", badge:()=>countOf("verification_requests", where("status","==","pending"))},
-  promos:      {title:"الترويج", icon:"📣", badge:()=>countOf("reel_promotions", where("status","==","pending"))},
-  businesses:  {title:"المحلات والخدمات", icon:"🏪", badge:()=>countOf("businesses", where("status","==","pending"))},
-  reports:     {title:"البلاغات", icon:"🚩"},
-  listings:    {title:"الإعلانات", icon:"🏠"},
-  reels:       {title:"الفيديوهات", icon:"🎬"},
-  live:        {title:"البث المباشر", icon:"🔴"},
-  sounds:      {title:"الأصوات", icon:"🎵"},
-  hashtags:    {title:"الهاشتاغات", icon:"#️⃣"},
-  weekly:      {title:"ترتيب الأسبوع", icon:"🏆"},
-  reviews:     {title:"التقييمات", icon:"⭐"},
-  pins:        {title:"تثبيت الخريطة", icon:"📍"},
-  referrals:   {title:"الدعوات", icon:"🎁"},
-  play:        {title:"مشتريات جوجل بلاي", icon:"🛒"},
-  buses:       {title:"الباصات", icon:"🚌", badge:()=>countOf("bus_line_submissions", where("status","==","pending"))},
-  demo:        {title:"الإعلانات الوهمية", icon:"🧪"},
-  streets:     {title:"صور الشوارع", icon:"📸", badge:()=>countOf("street_sessions", where("status","==","pending"))},
-  users:       {title:"المستخدمين", icon:"👤"},
-  admins:      {title:"المدراء", icon:"🔐"},
+  home:        {group:"عام", title:"الرئيسية", icon:"📊"},
+  finance:     {group:"الفلوس", title:"المالية", icon:"💵"},
+  topups:      {group:"الفلوس", title:"شحن الرصيد", icon:"💰", badge:()=>countOf("wallet_top_up_requests", where("status","==","pending"))},
+  deposits:    {group:"الفلوس", title:"العربون", icon:"🤝", badge:()=>countOf("deposit_transactions", where("status","in",["payment_under_review","release_requested","disputed"]))},
+  withdrawals: {group:"الفلوس", title:"سحب أرباح البث", icon:"💸", badge:()=>countOf("live_withdrawals", where("status","in",["pending","approved"]))},
+  verify:      {group:"عام", title:"التوثيق", icon:"🪪", badge:()=>countOf("verification_requests", where("status","==","pending"))},
+  promos:      {group:"الخريطة والإعلانات", title:"الترويج", icon:"📣", badge:()=>countOf("reel_promotions", where("status","==","pending"))},
+  businesses:  {group:"متاجر وجملة", title:"المحلات والخدمات", icon:"🏪", badge:()=>countOf("businesses", where("status","==","pending"))},
+  reports:     {group:"التسويق والدعم", title:"البلاغات", icon:"🚩"},
+  listings:    {group:"الخريطة والإعلانات", title:"الإعلانات", icon:"🏠"},
+  reels:       {group:"الفيديوهات والبث", title:"الفيديوهات", icon:"🎬"},
+  live:        {group:"الفيديوهات والبث", title:"البث المباشر", icon:"🔴"},
+  sounds:      {group:"الفيديوهات والبث", title:"الأصوات", icon:"🎵"},
+  hashtags:    {group:"الفيديوهات والبث", title:"الهاشتاغات", icon:"#️⃣"},
+  weekly:      {group:"الفيديوهات والبث", title:"ترتيب الأسبوع", icon:"🏆"},
+  reviews:     {group:"التسويق والدعم", title:"التقييمات", icon:"⭐"},
+  pins:        {group:"الخريطة والإعلانات", title:"تثبيت الخريطة", icon:"📍"},
+  surfaceAds:  {group:"الخريطة والإعلانات", title:"إعلانات الواجهة", icon:"🪧"},
+  referrals:   {group:"التسويق والدعم", title:"الدعوات", icon:"🎁"},
+  play:        {group:"الفلوس", title:"مشتريات جوجل بلاي", icon:"🛒"},
+  buses:       {group:"الخريطة والإعلانات", title:"الباصات", icon:"🚌", badge:()=>countOf("bus_line_submissions", where("status","==","pending"))},
+  demo:        {group:"الخريطة والإعلانات", title:"الإعلانات الوهمية", icon:"🧪"},
+  streets:     {group:"الخريطة والإعلانات", title:"صور الشوارع", icon:"📸", badge:()=>countOf("street_sessions", where("status","==","pending"))},
+  users:       {group:"عام", title:"المستخدمين", icon:"👤"},
+  admins:      {group:"عام", title:"المدراء", icon:"🔐"},
+  svcDashboard: {group:"عام", title:"ملخص الخدمات", icon:"🛎", svc:"dashboard"},
+  svcReports: {group:"عام", title:"تقارير الخدمات", icon:"📈", svc:"reports"},
+  svcCustomers: {group:"عام", title:"زبائن الخدمات", icon:"🧑‍🤝‍🧑", svc:"customers"},
+  svcStaff: {group:"عام", title:"موظفين الخدمات", icon:"🧑‍💼", svc:"staff"},
+  svcLog: {group:"عام", title:"سجل الخدمات", icon:"📜", svc:"log"},
+  svcCountries: {group:"عام", title:"الدول", icon:"🌍", svc:"countries"},
+  svcCities: {group:"عام", title:"المدن", icon:"🏙", svc:"cities"},
+  svcAccounts: {group:"الفلوس", title:"الحسابات (ERP)", icon:"📒", svc:"accounts"},
+  svcReceipts: {group:"الفلوس", title:"الإيصالات", icon:"🧾", svc:"receipts"},
+  svcInvoices: {group:"الفلوس", title:"الفواتير", icon:"📄", svc:"invoices"},
+  svcPayments: {group:"الفلوس", title:"مدفوعات الخدمات", icon:"💳", svc:"payments"},
+  svcDues: {group:"الفلوس", title:"المستحقات", icon:"🏦", svc:"dues"},
+  svcCommissions: {group:"الفلوس", title:"العمولات", icon:"％", svc:"commissions"},
+  svcFinPartners: {group:"الفلوس", title:"مالية الشركاء", icon:"🤝", svc:"financePartners"},
+  svcFinReports: {group:"الفلوس", title:"التقارير المالية", icon:"📊", svc:"financeReports"},
+  svcPartners: {group:"تكسي ونقل", title:"السائقين والشركاء", icon:"🚕", svc:"partners"},
+  svcVerification: {group:"تكسي ونقل", title:"توثيق الشركاء", icon:"🪪", svc:"verification"},
+  svcOrders: {group:"تكسي ونقل", title:"الطلبات", icon:"📦", svc:"orders"},
+  svcPricing: {group:"تكسي ونقل", title:"التسعير", icon:"🏷", svc:"pricing"},
+  svcMerchants: {group:"طعام", title:"المطاعم والمتاجر", icon:"🍽", svc:"merchants"},
+  svcPharmacies: {group:"صيدليات", title:"الصيدليات", icon:"💊", svc:"pharmacies"},
+  svcWsSuppliers: {group:"متاجر وجملة", title:"موردين الجملة", icon:"🏭", svc:"wholesaleSuppliers"},
+  svcWsMarket: {group:"متاجر وجملة", title:"سوق الجملة", icon:"🏬", svc:"wholesaleMarket"},
+  svcCaravans: {group:"كرفانات", title:"الكرفانات", icon:"🚐", svc:"caravansAdmin"},
+  svcAds: {group:"الخريطة والإعلانات", title:"إعلانات الخدمات", icon:"📢", svc:"ads"},
+  svcMarketing: {group:"التسويق والدعم", title:"تسويق الخدمات", icon:"🚀", svc:"marketing"},
+  svcSupport: {group:"التسويق والدعم", title:"دعم الطلبات", icon:"🎧", svc:"support"},
+  svcDisputes: {group:"التسويق والدعم", title:"النزاعات", icon:"⚖️", svc:"disputes"},
 };
 let current = "home";
 let pageState = {};
 
 function buildNav(){
-  $("#nav").innerHTML = Object.entries(PAGES).map(([k,p]) =>
-    `<button data-p="${k}" class="${k===current?"active":""}">${p.icon} ${p.title}<span class="badge" id="b-${k}"></span></button>`).join("");
+  const ORDER = ["عام","الفلوس","تكسي ونقل","طعام","صيدليات","متاجر وجملة","كرفانات","الخريطة والإعلانات","الفيديوهات والبث","التسويق والدعم"];
+  const entries = Object.entries(PAGES).map((e, i) => [e, i]).sort((a, b) =>
+    (ORDER.indexOf(a[0][1].group) - ORDER.indexOf(b[0][1].group)) || (a[1] - b[1])).map(x => x[0]);
+  let last = null;
+  $("#nav").innerHTML = entries.map(([k,p]) => {
+    const head = p.group !== last ? `<div class="nav-group">${esc(p.group || "")}</div>` : "";
+    last = p.group;
+    return head + `<button data-p="${k}" class="${k===current?"active":""}">${p.icon} ${p.title}<span class="badge" id="b-${k}"></span></button>`;
+  }).join("");
   $("#nav").querySelectorAll("button").forEach(b => b.onclick = () => { go(b.dataset.p); $("#side").classList.remove("open"); });
   refreshBadges();
 }
 async function refreshBadges(){
   for (const [k,p] of Object.entries(PAGES)) if (p.badge) p.badge().then(n => { const el = $("#b-"+k); if (el) el.textContent = n ? n : ""; });
 }
+window.addEventListener('hashchange', () => { const h = location.hash.replace('#',''); if (PAGES[h] && h !== current) { current = h; pageState = {}; buildNav(); render(); } });
+const SVC_ADMIN = "https://prob-map-services-admin.web.app/";
+function renderSvc(p){
+  $("#view").innerHTML = `<p class="muted" style="margin:0 0 8px">أول مرة بس: إذا طلب تسجيل دخول، ادخل بنفس حسابك.</p>
+    <iframe class="svc-frame" src="${SVC_ADMIN}?embed=1&section=${encodeURIComponent(PAGES[p].svc)}" allow="clipboard-write; geolocation"></iframe>`;
+}
 function go(p){ current = p; pageState = {}; location.hash = p; buildNav(); render(); }
 async function render(){
   $("#pageTitle").textContent = PAGES[current].icon + " " + PAGES[current].title;
   $("#view").innerHTML = `<div class="loading">عم يحمّل…</div>`;
-  try { await RENDER[current](); }
+  try { if (PAGES[current].svc) renderSvc(current); else await RENDER[current](); }
   catch(e){ console.error(e); $("#view").innerHTML = `<div class="empty">صار خطأ: ${esc(errMsg(e))}</div>`; }
   refreshBadges();
 }
@@ -482,8 +538,14 @@ RENDER.withdrawals = async () => {
         ${r.status === "pending" ? `<button class="btn-sm btn-ok" data-w="approve" data-id="${esc(r.id)}">✅ موافقة</button>` : ""}
         ${r.status === "approved" ? `<button class="btn-sm btn-ok" data-w="paid" data-id="${esc(r.id)}">💵 تم الدفع</button>` : ""}
         ${["pending","approved"].includes(r.status) ? `<button class="btn-sm btn-bad" data-w="reject" data-id="${esc(r.id)}">❌ رفض</button>` : ""}
+        <button class="btn-sm btn-bad" data-wreset="${esc(r.ownerId)}">🧹 تصفير الرصيد</button>
       </div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html; bindFilters();
+  $("#view").querySelectorAll("[data-wreset]").forEach(b => b.onclick = async () => {
+    const reason = await ask({title: "تصفير رصيد الأرباح", text: "الرصيد يلي فيه يسحبه بيصير صفر، وبيوصله إشعار بالسبب. المبالغ المدفوعة أو المحجوزة بطلب ما بتتأثر.", input: "اكتب السبب", danger: true, okText: "تصفير"});
+    if (!reason || typeof reason !== "string" || !reason.trim()) return reason === false || reason == null ? undefined : toast("لازم تكتب السبب", true);
+    act(b, () => call("liveAdminResetEarnings", {userId: b.dataset.wreset, reason: reason.trim()}), "تصفّر الرصيد ✅");
+  });
   $("#view").querySelectorAll("[data-w]").forEach(b => b.onclick = async () => {
     const action = b.dataset.w; const data = {id: b.dataset.id, action};
     if (action === "reject") { const r = await ask({title:"رفض السحب", input:"سبب الرفض", okText:"رفض", danger:true}); if (r === null) return; data.reason = r || "مرفوض"; }
@@ -690,7 +752,14 @@ RENDER.live = async () => {
 RENDER.sounds = async () => {
   const showRemoved = pageState.removed === true;
   const rows = await fetchList("sounds", [where("status","==", showRemoved ? "removed" : "active"), orderBy("createdAt","desc")], 80);
-  let html = `<div class="row" style="margin-bottom:14px"><button class="btn-sm" id="tg">${showRemoved ? "عرض الأصوات الشغّالة" : "عرض الأصوات المحذوفة"}</button></div>`;
+  let html = `<div class="item" style="margin-bottom:14px"><div class="title" style="margin-bottom:8px">➕ إضافة صوت للتطبيق</div>
+    <div class="row" style="flex-wrap:wrap;gap:6px;align-items:center">
+      <input id="sndTitle" placeholder="اسم الصوت" style="min-width:220px">
+      <label class="btn-sm" style="cursor:pointer">🎵 اختار ملف صوت (لحد 15 ميغا)<input type="file" id="sndFile" accept="audio/*" style="display:none"></label>
+      <span class="muted" id="sndName"></span>
+      <button class="btn-sm btn-ok" id="sndAdd">⬆️ رفع وإضافة</button>
+    </div><p class="muted" style="margin:6px 0 0">الصوت بيصير متاح لكل الناس يستعملوه بفيديوهاتهم.</p></div>
+    <div class="row" style="margin-bottom:14px"><button class="btn-sm" id="tg">${showRemoved ? "عرض الأصوات الشغّالة" : "عرض الأصوات المحذوفة"}</button></div>`;
   if (!rows.length) html += emptyBox(showRemoved ? "ما في أصوات محذوفة" : "ما في أصوات لسّا");
   html += `<div class="list">${(await Promise.all(rows.map(async r => `<div class="item"><div class="head">${r.coverUrl ? `<img class="thumb" src="${esc(r.coverUrl)}">` : ""}<div><div class="title">${esc(r.title || "صوت")}</div>
     <div class="muted" style="font-size:13px">🎬 ${esc(r.usageCount || 0)} فيديو ${r.isOriginal ? "· صوت أصلي من فيديو" : ""}</div></div></div>
@@ -699,6 +768,20 @@ RENDER.sounds = async () => {
     <div class="actions">${showRemoved ? `<button class="btn-sm btn-ok" data-snd="active" data-id="${esc(r.id)}">↩️ إرجاع الصوت</button>` : `<button class="btn-sm btn-bad" data-snd="removed" data-id="${esc(r.id)}">🗑 حذف الصوت (حقوق أو مخالفة)</button>`}</div>${techDetails(r)}</div>`))).join("")}</div>`;
   $("#view").innerHTML = html;
   $("#tg").onclick = () => { pageState.removed = !showRemoved; render(); };
+  $("#sndFile").onchange = e => { $("#sndName").textContent = e.target.files[0]?.name || ""; };
+  $("#sndAdd").onclick = e => act(e.target, async () => {
+    const f = $("#sndFile").files[0];
+    const title = $("#sndTitle").value.trim();
+    if (!f) throw new Error("اختار ملف الصوت");
+    if (!title) throw new Error("اكتب اسم الصوت");
+    if (f.size > 15 * 1024 * 1024) throw new Error("الملف أكبر من 15 ميغا");
+    const durationMs = await new Promise(res => { const a = new Audio(); a.preload = "metadata";
+      a.onloadedmetadata = () => res(Math.round((a.duration || 0) * 1000)); a.onerror = () => res(0); a.src = URL.createObjectURL(f); });
+    const ext = (f.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+    const path = `sounds/${auth.currentUser.uid}/admin_${Date.now()}.${ext}`;
+    await uploadBytes(sref(storage, path), f, {contentType: f.type || "audio/mpeg"});
+    await call("createSound", {storagePath: path, title, durationMs});
+  }, "انضاف الصوت ✅");
   $("#view").querySelectorAll("[data-snd]").forEach(b => b.onclick = async () => {
     if (b.dataset.snd === "removed" && !await ask({title:"حذف الصوت", text:"الصوت رح يختفي من مكتبة الأصوات (الفيديوهات اللي استخدمته بتضل).", danger:true, okText:"حذف"})) return;
     act(b, () => updateDoc(doc(db,"sounds",b.dataset.id), {status: b.dataset.snd, moderatedBy: auth.currentUser.uid, moderatedAt: serverTimestamp()}));
@@ -874,6 +957,8 @@ RENDER.buses = async () => {
       <button class="btn-gold" id="busImport">⬇️ سحب الخطوط من OpenStreetMap${city ? " — "+esc(city) : ""}</button>
     </div>
     <p class="muted">عدد الخطوط: ${lines.length} · ركّاب عم يشاركوا هلق: ${Object.values(liveBy).reduce((a,b)=>a+b,0)}</p>`;
+  // Live map (owner 2026-11-20): every line drawn on its real route, buses shared by riders live on it.
+  html += `<div id="busMap" style="height:440px;border-radius:14px;overflow:hidden;margin:6px 0 14px;border:1px solid var(--line)"></div>`;
   if (!lines.length) html += emptyBox("ما في خطوط لسّا. اختار مدينة واكبس «سحب الخطوط».");
   html += `<div class="list">${lines.map(l => `<div class="item"><div class="head">
       <span style="display:inline-block;width:14px;height:14px;border-radius:4px;background:#${esc(l.color || "999")}"></span>
@@ -888,12 +973,52 @@ RENDER.buses = async () => {
       <input data-f="endTime" data-id="${esc(l.id)}" value="${esc(l.endTime || "22:00")}" style="width:70px" title="نهاية الدوام">
     </div>
     <div class="actions">
+      <button class="btn-sm" data-bmap="${esc(l.id)}">🗺 عالخريطة</button>
       <button class="btn-sm btn-ok" data-bsave="${esc(l.id)}">💾 حفظ</button>
       <button class="btn-sm" data-bact="${esc(l.id)}" data-on="${l.active === false ? "1" : "0"}">${l.active === false ? "↩️ تفعيل" : "🙈 إيقاف"}</button>
       <button class="btn-sm" data-bstop="${esc(l.id)}">➕ موقف</button>
       <button class="btn-sm btn-bad" data-bdel="${esc(l.id)}">🗑 حذف</button>
     </div></div>`).join("")}</div>`;
   $("#view").innerHTML = html;
+  if (window.L && $("#busMap")) {
+    if (window._busMap) { try { window._busMap.remove(); } catch {} }
+    const map = window._busMap = L.map("busMap", {zoomControl: true}).setView([34.8, 38.5], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, attribution: "© OpenStreetMap"}).addTo(map);
+    const bounds = [];
+    const layers = {};
+    for (const l of lines) {
+      const pts = decodePoly(l.pathEnc);
+      if (pts.length < 2) continue;
+      const line = L.polyline(pts, {color: "#" + (l.color || "E0B050"), weight: 5, opacity: l.active === false ? 0.35 : 0.9})
+        .bindPopup(`<b>${esc(l.nameAr || l.name || l.id)}</b><br>${esc(l.city || "")} · ${(l.stops || []).length} موقف`).addTo(map);
+      layers[l.id] = line;
+      bounds.push(...pts);
+    }
+    const busLayer = L.layerGroup().addTo(map);
+    const drawLive = (rows) => {
+      busLayer.clearLayers();
+      const t = Date.now();
+      for (const b of rows) {
+        if (t - ts(b.updatedAt) > 120000 || typeof b.lat !== "number") continue;
+        L.circleMarker([b.lat, b.lng], {radius: 8, color: "#fff", weight: 2, fillColor: "#E53935", fillOpacity: 1})
+          .bindPopup("🚌 باص مباشر").addTo(busLayer);
+      }
+    };
+    drawLive(live);
+    if (bounds.length) map.fitBounds(bounds, {padding: [20, 20]});
+    $("#view").querySelectorAll("[data-bmap]").forEach(btn => btn.onclick = () => {
+      const ly = layers[btn.dataset.bmap]; if (!ly) return toast("ما في مسار مرسوم لهالخط");
+      map.fitBounds(ly.getBounds(), {padding: [30, 30]}); ly.openPopup();
+      $("#busMap").scrollIntoView({behavior: "smooth", block: "center"});
+    });
+    // Live positions refresh every 20 seconds while this page is open.
+    clearInterval(window._busTick);
+    window._busTick = setInterval(async () => {
+      if (current !== "buses" || !$("#busMap")) return clearInterval(window._busTick);
+      if (document.visibilityState !== "visible") return;
+      try { drawLive(await fetchList("bus_live", [], 500)); } catch {}
+    }, 15000);
+  }
   $("#busCity").onchange = e => { pageState.busCity = e.target.value; render(); };
   $("#view").querySelectorAll("[data-subok]").forEach(b => b.onclick = () => {
     const id = b.dataset.subok;
@@ -1025,7 +1150,20 @@ RENDER.pins = async () => {
 /* ---- referrals ---- */
 RENDER.referrals = async () => {
   const data = await admin("referrals");
-  let html = `<div class="cards" style="margin-bottom:14px"><div class="stat"><div class="l">كل الدعوات</div><div class="n">${money(data.totalReferrals)}</div></div>
+  const cfgSnap = await getDoc(doc(db, "app_config", "referrals")).catch(() => null);
+  const cfg = cfgSnap && cfgSnap.exists() ? cfgSnap.data() : {};
+  const d2in = v => { const d = toDate(v); return d ? d.toISOString().slice(0, 10) : ""; };
+  let html = `<div class="item" style="margin-bottom:14px"><div class="title" style="margin-bottom:8px">⚙️ إعدادات الدعوات</div>
+    <div class="row" style="flex-wrap:wrap;gap:10px;align-items:center">
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rfOn" ${cfg.enabled !== false ? "checked" : ""}> الدعوات شغّالة</label>
+      <label>نقاط يلي بيدعي <input id="rfInv" type="number" min="0" value="${esc(cfg.inviterPoints ?? 50)}" style="width:80px"></label>
+      <label>نقاط الصديق الجديد <input id="rfNew" type="number" min="0" value="${esc(cfg.inviteePoints ?? 20)}" style="width:80px"></label>
+      <label>حد الدعوات باليوم لكل شخص <input id="rfDay" type="number" min="1" value="${esc(cfg.maxPerDay ?? 20)}" style="width:80px"></label>
+      <label>من تاريخ <input id="rfFrom" type="date" value="${d2in(cfg.startsAt)}"></label>
+      <label>لتاريخ <input id="rfTo" type="date" value="${d2in(cfg.endsAt)}"></label>
+      <button class="btn-sm btn-ok" id="rfSave">💾 حفظ</button>
+    </div><p class="muted" style="margin:6px 0 0">بتشتغل التغييرات خلال دقيقة. إذا وقّفتها، ما حدا بيقدر يستعمل كود دعوة.</p></div>
+  <div class="cards" style="margin-bottom:14px"><div class="stat"><div class="l">كل الدعوات</div><div class="n">${money(data.totalReferrals)}</div></div>
     <div class="stat"><div class="l">نقاط انعطت (آخر 150 دعوة)</div><div class="n">${money(data.pointsGiven)}</div></div></div>
     <h3 style="margin:8px 0">🏅 أكتر الناس دعوة</h3>`;
   html += data.inviters.length ? `<div class="list">${data.inviters.map(u => `<div class="item" style="padding:10px 12px"><div class="head"><span class="title">${esc(u.name || "بدون اسم")}</span><span class="muted">${esc(u.email)}</span>${u.referralBlocked ? pill("suspended") : ""}</div>
@@ -1035,6 +1173,16 @@ RENDER.referrals = async () => {
   html += data.referrals.length ? `<div class="list">${(await Promise.all(data.referrals.map(async r => `<div class="item" style="padding:10px 12px">
     <div class="meta">الصديق الجديد: ${await userLabel(r.id)}<br>دعاه: ${await userLabel(r.inviterId)} · الكود: <b>${esc(r.code || "—")}</b> · ${fmtDate(r.createdAt)}</div></div>`))).join("")}</div>` : emptyBox("ما في دعوات لسّا");
   $("#view").innerHTML = html;
+  $("#rfSave").onclick = e => act(e.target, async () => {
+    const day = v => v ? new Date(v + "T00:00:00") : null;
+    await setDoc(doc(db, "app_config", "referrals"), {
+      enabled: $("#rfOn").checked,
+      inviterPoints: Number($("#rfInv").value || 0), inviteePoints: Number($("#rfNew").value || 0),
+      maxPerDay: Number($("#rfDay").value || 20),
+      startsAt: day($("#rfFrom").value), endsAt: $("#rfTo").value ? new Date($("#rfTo").value + "T23:59:59") : null,
+      updatedAt: serverTimestamp(),
+    }, {merge: true});
+  }, "انحفظت الإعدادات ✅");
   $("#view").querySelectorAll("[data-rb]").forEach(b => b.onclick = async () => {
     const block = b.dataset.v === "1";
     if (block && !await ask({title:"حظر من الدعوات", text:"هالشخص ما رح ياخد نقاط على دعوات جديدة. النقاط القديمة بتضل.", danger:true, okText:"حظر"})) return;
@@ -1215,6 +1363,64 @@ async function balanceHistory(uid){
   } catch(e){ $("#modal").innerHTML = `<h3>📜 سجل الرصيد</h3><div class="empty">${esc(errMsg(e))}</div><div class="actions"><button id="mc">إغلاق</button></div>`; $("#mc").onclick = closeModal; }
 }
 
+
+/* ---- surface ads (owner 2026-11-20): ads on the map and/or the videos screen ---- */
+RENDER.surfaceAds = async () => {
+  const rows = await fetchList("sponsored_banners", [], 200);
+  rows.sort((a,b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const placeName = {map: "على الخريطة", reels: "بين الفيديوهات", both: "الخريطة والفيديوهات"};
+  const form = (r = {}) => `<div class="item" data-ad="${esc(r.id || "new")}">
+    <div class="row" style="flex-wrap:wrap;gap:6px">
+      <input data-k="title" value="${esc(r.title || "")}" placeholder="العنوان" style="min-width:200px">
+      <input data-k="description" value="${esc(r.description || "")}" placeholder="وصف قصير" style="min-width:240px">
+      <select data-k="placement">${Object.entries(placeName).map(([k,v]) => `<option value="${k}" ${(r.placement || "map")===k?"selected":""}>${v}</option>`).join("")}</select>
+      <input data-k="linkUrl" value="${esc(r.linkUrl || "")}" placeholder="رابط (اختياري)" style="min-width:200px">
+      <input data-k="phone" value="${esc(r.phone || "")}" placeholder="رقم تلفون (اختياري)" style="width:150px">
+      <input data-k="sortOrder" type="number" value="${esc(r.sortOrder ?? 0)}" title="الترتيب" style="width:70px">
+      <label class="muted" style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-k="isActive" ${r.isActive !== false ? "checked" : ""}> شغّال</label>
+    </div>
+    <div class="row" style="gap:8px;margin-top:8px;align-items:center">
+      ${r.imageUrl ? `<img src="${esc(r.imageUrl)}" alt="" style="width:120px;height:60px;object-fit:cover;border-radius:8px">` : ""}
+      <label class="btn-sm" style="cursor:pointer">🖼 ${r.imageUrl ? "غيّر الصورة" : "ارفع صورة"}<input type="file" accept="image/jpeg,image/png,image/webp" data-k="file" style="display:none"></label>
+    </div>
+    <div class="actions"><button class="btn-sm btn-ok" data-adsave>💾 حفظ</button>${r.id ? `<button class="btn-sm btn-bad" data-addel>🗑 حذف</button>` : ""}</div></div>`;
+  $("#view").innerHTML = `<p class="muted" style="margin-top:0">إعلان بيطلع للناس على الخريطة أو فوق الفيديوهات (أو الاتنين). الصورة لحد 5 ميغا.</p>
+    <h3 style="margin:6px 0 8px">➕ إعلان جديد</h3><div class="list">${form()}</div>
+    <h3 style="margin:16px 0 8px">الإعلانات (${rows.length})</h3>
+    ${rows.length ? `<div class="list">${rows.map(r => form(r)).join("")}</div>` : emptyBox("ما في إعلانات لسّا.")}`;
+  $("#view").querySelectorAll("[data-ad]").forEach(box => {
+    const id = box.dataset.ad;
+    const v = k => box.querySelector(`[data-k="${k}"]`);
+    box.querySelector("[data-adsave]").onclick = e => act(e.target, async () => {
+      const title = v("title").value.trim();
+      if (!title) throw new Error("اكتب عنوان للإعلان");
+      const ref = id === "new" ? doc(collection(db, "sponsored_banners")) : doc(db, "sponsored_banners", id);
+      const data = {
+        title, description: v("description").value.trim(), placement: v("placement").value,
+        linkUrl: v("linkUrl").value.trim(), phone: v("phone").value.trim(),
+        sortOrder: Number(v("sortOrder").value || 0), isActive: v("isActive").checked, updatedAt: serverTimestamp(),
+      };
+      const f = v("file").files[0];
+      if (f) {
+        if (f.size > 5 * 1024 * 1024) throw new Error("الصورة أكبر من 5 ميغا");
+        const ext = (f.type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+        const r = sref(storage, `sponsored_banners/${ref.id}/image_${Date.now()}.${ext}`);
+        await uploadBytes(r, f, {contentType: f.type});
+        const url = await getDownloadURL(r);
+        data.imageUrl = url; data.imageUrls = [url];
+      }
+      if (id === "new") data.createdAt = serverTimestamp();
+      await setDoc(ref, data, {merge: true});
+      render();
+    }, "انحفظ ✅");
+    const del = box.querySelector("[data-addel]");
+    if (del) del.onclick = async e => {
+      if (!await ask({title: "حذف الإعلان", text: "رح يختفي من التطبيق.", danger: true, okText: "حذف"})) return;
+      act(e.target, async () => { await deleteDoc(doc(db, "sponsored_banners", id)); render(); }, "انحذف");
+    };
+  });
+};
+
 /* ---- admins ---- */
 RENDER.admins = async () => {
   const me = auth.currentUser;
@@ -1245,7 +1451,9 @@ onAuthStateChanged(auth, async user => {
   try { const s = await getDoc(doc(db, "admin_users", user.uid)); ok = s.exists() && s.data().active !== false; } catch { ok = false; }
   if (!ok) {
     $("#loginErr").innerHTML = `الحساب <b>${esc(user.email)}</b> مش مدير.`;
-    await signOut(auth); return;
+    // Inside the unified panel the sign-in is shared: never sign the owner out from here.
+    if (!document.documentElement.classList.contains('embed')) await signOut(auth);
+    $("#app").style.display = "none"; $("#login").style.display = "flex"; return;
   }
   $("#login").style.display = "none"; $("#app").style.display = "block";
   $("#meEmail").textContent = user.email;
