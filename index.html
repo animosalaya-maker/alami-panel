@@ -178,6 +178,10 @@ const db = getFirestore(app);
 const fns = getFunctions(app, "us-central1");
 const storage = getStorage(app);
 const call = (name, data) => httpsCallable(fns, name)(data).then(r => r.data);
+/* services (europe-west1): stores waiting for approval — badge + home alert (owner 2026-11-25) */
+const fnsEU = getFunctions(app, "europe-west1");
+let _svcAlerts = null;
+const svcAlerts = () => (_svcAlerts ??= httpsCallable(fnsEU, "adminPendingAlerts")({}).then(r => r.data).catch(() => ({stores: [], pendingDocuments: 0})));
 
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -384,10 +388,10 @@ const PAGES = {
   svcFinPartners: {group:"الفلوس", title:"مالية الشركاء", icon:"🤝", svc:"financePartners"},
   svcFinReports: {group:"الفلوس", title:"التقارير المالية", icon:"📊", svc:"financeReports"},
   svcPartners: {group:"تكسي ونقل", title:"السائقين والشركاء", icon:"🚕", svc:"partners"},
-  svcVerification: {group:"تكسي ونقل", title:"توثيق الشركاء", icon:"🪪", svc:"verification"},
+  svcVerification: {group:"تكسي ونقل", title:"توثيق الشركاء", icon:"🪪", svc:"verification", badge:()=>svcAlerts().then(a => a.pendingDocuments)},
   svcOrders: {group:"تكسي ونقل", title:"الطلبات", icon:"📦", svc:"orders"},
   svcPricing: {group:"تكسي ونقل", title:"التسعير", icon:"🏷", svc:"pricing"},
-  svcMerchants: {group:"طعام", title:"المطاعم والمتاجر", icon:"🍽", svc:"merchants"},
+  svcMerchants: {group:"طعام", title:"المطاعم والمتاجر", icon:"🍽", svc:"merchants", badge:()=>svcAlerts().then(a => a.stores.length)},
   svcPharmacies: {group:"صيدليات", title:"الصيدليات", icon:"💊", svc:"pharmacies"},
   svcWsSuppliers: {group:"متاجر وجملة", title:"موردين الجملة", icon:"🏭", svc:"wholesaleSuppliers"},
   svcWsMarket: {group:"متاجر وجملة", title:"سوق الجملة", icon:"🏬", svc:"wholesaleMarket"},
@@ -414,6 +418,7 @@ function buildNav(){
   refreshBadges();
 }
 async function refreshBadges(){
+  _svcAlerts = null;
   for (const [k,p] of Object.entries(PAGES)) if (p.badge) p.badge().then(n => { const el = $("#b-"+k); if (el) el.textContent = n ? n : ""; });
 }
 window.addEventListener('hashchange', () => { const h = location.hash.replace('#',''); if (PAGES[h] && h !== current) { current = h; pageState = {}; buildNav(); render(); } });
@@ -457,9 +462,15 @@ RENDER.home = async () => {
     ["promos", "ترويج معلّق", countOf("reel_promotions", where("status","==","pending")), true],
     ["businesses", "محلات معلّقة", countOf("businesses", where("status","==","pending")), true],
     ["reports", "البلاغات", countOf("user_reports")],
+    ["svcMerchants", "محلات جديدة بانتظار موافقتك", svcAlerts().then(a => a.stores.length), true],
   ];
   const vals = await Promise.all(stats.map(s => s[2]));
-  $("#view").innerHTML = `<div class="cards">${stats.map((s,i) =>
+  const al = await svcAlerts();
+  const alertBox = al.stores.length ? `<div class="stat alert" data-go="svcMerchants" style="margin-bottom:16px;cursor:pointer">
+      <div class="l">🔔 في ${al.stores.length} محل جديد ناطر موافقتك — ما بيبيّن للزباين لحتى تقبله</div>
+      <div style="margin-top:8px;line-height:1.9">${al.stores.map(x => `• ${esc(x.name || "بدون اسم")}`).join("<br>")}</div>
+      <div class="muted" style="margin-top:6px">اضغط هون لتقبل أو ترفض</div></div>` : "";
+  $("#view").innerHTML = alertBox + `<div class="cards">${stats.map((s,i) =>
     `<div class="stat ${s[3] && vals[i] ? "alert" : ""}" data-go="${s[0]}"><div class="l">${s[1]}</div><div class="n">${vals[i] ?? "—"}</div></div>`).join("")}</div>
     <p class="muted" style="margin-top:22px;line-height:1.9">الأرقام الصفرا يعني في طلبات ناطرة موافقتك. اضغط على أي مربع لتفتح القسم.</p>`;
   $("#view").querySelectorAll("[data-go]").forEach(el => el.onclick = () => go(el.dataset.go));
