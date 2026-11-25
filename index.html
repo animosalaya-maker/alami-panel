@@ -472,17 +472,30 @@ async function alertsList(){
     ["streets", "📸", "صور شوارع ناطرة مراجعة", safe(countOf("street_sessions", where("status","==","pending")))],
   ];
   const ns = await Promise.all(items.map(i => i[3]));
-  return items.map((i, k) => ({page: i[0], icon: i[1], text: i[2], n: ns[k], names: i[4] || []})).filter(x => x.n > 0);
+  return items.map((i, k) => ({page: i[0], icon: i[1], text: i[2], n: ns[k], names: i[4] || [], stores: i[0] === "svcMerchants" ? svc.stores : []})).filter(x => x.n > 0);
 }
 RENDER.alerts = async () => {
   const list = await alertsList();
   $("#view").innerHTML = list.length ? `<div class="list">${list.map(x => `
     <div class="item" data-go="${x.page}" style="cursor:pointer">
       <div class="head"><span class="title">${x.icon} ${esc(x.text)}</span><span style="margin-inline-start:auto;background:#e53935;color:#fff;border-radius:99px;font-size:13px;padding:2px 10px;font-weight:700">${x.n}</span></div>
-      ${x.names.length ? `<div class="meta">${x.names.slice(0,10).map(n => "• " + esc(n)).join("<br>")}</div>` : ""}
+      ${x.page === "svcMerchants" ? x.stores.map(st => `<div class="meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <b>• ${esc(st.name || "بدون اسم")}</b>
+          <button class="btn-sm btn-ok" data-mr="ACTIVE" data-id="${esc(st.id)}">✅ قبول</button>
+          <button class="btn-sm btn-bad" data-mr="REJECTED" data-id="${esc(st.id)}">❌ رفض</button></div>`).join("")
+        : x.names.length ? `<div class="meta">${x.names.slice(0,10).map(n => "• " + esc(n)).join("<br>")}</div>` : ""}
       <div class="muted" style="margin-top:6px">اضغط لتفتح القسم وتقبل أو ترفض</div>
     </div>`).join("")}</div>` : emptyBox("ما في شي ناطرك هلق 👌 كل شي مخلّص");
   $("#view").querySelectorAll("[data-go]").forEach(el => el.onclick = () => go(el.dataset.go));
+  $("#view").querySelectorAll("[data-mr]").forEach(b => b.onclick = async (ev) => {
+    ev.stopPropagation();
+    const decision = b.dataset.mr;
+    let reason = "";
+    if (decision !== "ACTIVE") { reason = prompt("سبب الرفض (بيوصل لصاحب المحل):") || ""; if (reason.trim().length < 3) return alert("اكتب سبب من 3 أحرف أو أكتر"); }
+    b.disabled = true;
+    try { await httpsCallable(fnsEU, "reviewMerchant")({merchantId: b.dataset.id, decision, reason}); alert(decision === "ACTIVE" ? "تم القبول ✅ صار المحل يبيّن للزباين" : "تم الرفض"); render(); }
+    catch(e){ b.disabled = false; alert("ما زبط: " + errMsg(e)); }
+  });
 };
 
 RENDER.home = async () => {
